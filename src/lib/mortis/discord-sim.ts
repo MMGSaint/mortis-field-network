@@ -233,7 +233,7 @@ export class SimulatedGuild {
   }
 
   async listPins(channelId: string): Promise<SimMessage[]> {
-    return this.channelById(channelId)?.messages.filter((m) => m.pinned) ?? [];
+    return this.gated("GET", `/channels/${channelId}/pins`, () => this.channelById(channelId)?.messages.filter((m) => m.pinned) ?? []);
   }
 
   async unpinMessage(channelId: string, messageId: string): Promise<void> {
@@ -300,8 +300,15 @@ export class SimulatedGuild {
   }
 
   async pauseInvites(untilIso: string | null): Promise<{ ok: boolean; detail: string }> {
-    this.invitesPaused = Boolean(untilIso);
-    return { ok: true, detail: untilIso ? "sim invites paused" : "sim invites open" };
+    try {
+      await this.gated("PUT", `/guilds/${this.id}/incident-actions`, () => {
+        this.invitesPaused = Boolean(untilIso);
+      });
+      return { ok: true, detail: untilIso ? "sim invites paused" : "sim invites open" };
+    } catch (e) {
+      const err = e as { status?: number };
+      return { ok: false, detail: `invite pause ${err.status ?? "error"}` };
+    }
   }
 
   async putGuildCommands(appId: string, commands: unknown[]): Promise<unknown[]> {

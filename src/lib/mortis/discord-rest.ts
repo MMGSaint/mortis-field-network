@@ -513,7 +513,6 @@ export class DiscordRestGuild extends SimulatedGuild {
       return { ok: true, detail: untilIso ? "invites paused via incident-actions" : "invites resumed" };
     } catch (e) {
       const err = e as { status?: number };
-      this.invitesPaused = Boolean(untilIso);
       return {
         ok: false,
         detail: `invite pause via incident-actions returned ${err.status ?? "error"} (Manage Server is intentionally not in the least-privilege set). Arrival close still applies.`,

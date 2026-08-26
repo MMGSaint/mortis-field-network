@@ -96,6 +96,8 @@ function Tickets() {
               <p className="tabular-nums">{t.id}</p>
               <p className="text-kicker text-muted">
                 {t.category} · {t.status} · {t.opener}
+                {t.assignee ? ` · assignee ${t.assignee}` : ""}
+                {t.created_at ? ` · ${t.created_at}` : ""}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">

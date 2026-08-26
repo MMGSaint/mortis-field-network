@@ -23,7 +23,7 @@ export type RuntimeSnapshot = {
   categories: Array<{ key: string; display: string; audience: string }>;
   roles: Array<{ key: string; display: string; tier: string }>;
   members: Array<{ snowflake: string; handle: string; intake_state: string; callsign: string | null }>;
-  tickets: Array<{ id: string; category: string; status: string; opener: string }>;
+  tickets: Array<{ id: string; category: string; status: string; opener: string; assignee: string | null; created_at: string; transcript_key: string | null }>;
   audit: Array<{ id: string; at: string; actor: string; action: string; target?: string; outcome?: string; mirrored?: boolean }>;
   lockdown: boolean;
   lastAppliedHash: string | null;
@@ -326,6 +326,9 @@ export class MortisRuntime {
         category: t.category,
         status: t.status,
         opener: t.opener,
+        assignee: t.assignee,
+        created_at: t.created_at,
+        transcript_key: t.transcript_key,
       })),
       audit: this.store.audit.map((a) => ({
         id: a.id,

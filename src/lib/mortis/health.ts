@@ -55,7 +55,7 @@ export function assessHealth(
       findings.push({ severity: "hold", code: "missing.channel.live", target: ch.key, detail: `bound ${id} not present on guild` });
       continue;
     }
-    if (ch.kind === "text" && live.topic !== undefined && ch.topic && live.topic && live.topic !== ch.topic) {
+    if (ch.kind === "text" && ch.topic && live.topic !== ch.topic) {
       drift.push(ch.key);
       findings.push({ severity: "warn", code: "drift.topic", target: ch.key, detail: "topic differs from blueprint" });
     }
@@ -70,25 +70,35 @@ export function assessHealth(
       });
     }
     const everyone = live.permission_overwrites.find((o) => o.id === guild.id);
-    if (everyone && ch.audience !== "public") {
-      const denyView = (BigInt(everyone.deny || "0") & VIEW) !== 0n;
-      if (!denyView) {
+    if (ch.audience !== "public") {
+      if (!everyone) {
         drift.push(ch.key);
         findings.push({
           severity: "warn",
           code: "drift.overwrites",
           target: ch.key,
-          detail: "@everyone can view a non-public channel",
+          detail: "no @everyone overwrite on a non-public channel",
         });
+      } else {
+        const denyView = (BigInt(everyone.deny || "0") & VIEW) !== 0n;
+        if (!denyView) {
+          drift.push(ch.key);
+          findings.push({
+            severity: "warn",
+            code: "drift.overwrites",
+            target: ch.key,
+            detail: "@everyone can view a non-public channel",
+          });
+        }
       }
     }
     if (ch.webhook && !store.webhookUrls.get(ch.key) && !live.webhook && guild.live) {
       findings.push({ severity: "warn", code: "webhook.missing", target: ch.key, detail: "webhook URL not stored" });
     }
-    if (ch.pin_template && live.type === 0) {
+    if (ch.pin_template && live.type === 0 && live.messages.length > 0) {
       const pinned = live.messages.some((m) => m.pinned);
-      if (!pinned && guild.live) {
-        findings.push({ severity: "warn", code: "pin.missing", target: ch.key, detail: "pin template not present on live channel" });
+      if (!pinned) {
+        findings.push({ severity: "warn", code: "pin.missing", target: ch.key, detail: "pin template not present on channel" });
       }
     }
   }
@@ -112,7 +122,10 @@ export function assessHealth(
   }
 
   if (store.lockdown) {
-    findings.push({ severity: "warn", code: "lockdown", detail: "Arrival is closed; invites paused" });
+    const inviteNote = guild.invitesPaused
+      ? "invites paused"
+      : "invite-pause API did not succeed (Manage Server is not in the least-privilege set); arrival is closed";
+    findings.push({ severity: "warn", code: "lockdown", detail: `Arrival is closed; ${inviteNote}` });
   }
 
   const pinKeys = bp.channels.filter((c) => c.pin_template).map((c) => c.key);

@@ -327,13 +327,12 @@ async function slashLockdown(
 
 export async function enactLockdown(ctx: EnvoyContext, actor: string): Promise<void> {
   ctx.store.lockdown = true;
-  ctx.store.invitesPaused = true;
   const pause = await ctx.guild.pauseInvites(new Date(Date.now() + 24 * 3600 * 1000).toISOString());
-  ctx.guild.invitesPaused = true;
+  ctx.store.invitesPaused = pause.ok;
   ctx.store.appendAudit({
     actor,
     action: "lockdown",
-    details: { arrival: "closed", invites: "paused", invite_api: pause.detail },
+    details: { arrival: "closed", invites: pause.ok ? "paused" : "pause_api_failed", invite_api: pause.detail },
   });
   await closeArrival(ctx.bp, ctx.store, ctx.guild);
   await dispatchSend(
@@ -344,14 +343,13 @@ export async function enactLockdown(ctx: EnvoyContext, actor: string): Promise<v
 
 export async function liftLockdown(ctx: EnvoyContext, actor: string): Promise<void> {
   ctx.store.lockdown = false;
-  ctx.store.invitesPaused = false;
   const pause = await ctx.guild.pauseInvites(null);
-  ctx.guild.invitesPaused = false;
+  ctx.store.invitesPaused = pause.ok ? false : ctx.guild.invitesPaused;
   await openArrival(ctx.bp, ctx.store, ctx.guild);
   ctx.store.appendAudit({
     actor,
     action: "lockdown.lift",
-    details: { arrival: "open", invites: "resumed", invite_api: pause.detail },
+    details: { arrival: "open", invites: pause.ok ? "resumed" : "resume_api_failed", invite_api: pause.detail },
   });
   await dispatchSend(
     { channel_key: "arrival.notice", template_key: "tpl.ops.lockdown_lift", fields: {}, caller: { type: "owner-cli" } },

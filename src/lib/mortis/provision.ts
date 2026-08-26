@@ -547,28 +547,20 @@ export async function refreshPins(
     }
 
     let pins: Array<{ id: string; author_id: string; components?: unknown }> = [];
-    if (guild.live) {
-      try {
-        const raw = await restApi<Array<Record<string, unknown>>>(guild, "GET", `/channels/${liveId}/pins`);
-        pins = (raw ?? []).map((m) => {
-          const author = (m.author as Record<string, unknown> | undefined) ?? {};
-          return {
-            id: String(m.id),
-            author_id: String(author.id ?? ""),
-            components: m.components,
-          };
-        });
-      } catch (err) {
-        const e = err as Error & { body?: string };
-        store.appendAudit({
-          actor,
-          action: "provision.pin_refresh",
-          target: ch.key,
-          details: { action: "listPins_failed", error: `${e.message}${e.body ? ` ${e.body}` : ""}` },
-        });
-      }
-    } else {
-      pins = (await guild.listPins(liveId)).map((m) => ({ id: m.id, author_id: m.author_id, components: m.components }));
+    try {
+      pins = (await guild.listPins(liveId)).map((m) => ({
+        id: m.id,
+        author_id: m.author_id,
+        components: m.components,
+      }));
+    } catch (err) {
+      const e = err as Error & { body?: string };
+      store.appendAudit({
+        actor,
+        action: "provision.pin_refresh",
+        target: ch.key,
+        details: { action: "listPins_failed", error: `${e.message}${e.body ? ` ${e.body}` : ""}` },
+      });
     }
 
     const hasButtons = (m: { components?: unknown }) => JSON.stringify(m.components ?? "").includes(ids[0] ?? "___");

@@ -17,6 +17,11 @@ export type GatewayStatus = {
 
 type Packet = { op: number; t?: string | null; s?: number | null; d?: Record<string, unknown> | null };
 
+/** Modal openers must ACK type 9 only. Never type 5 first. */
+export function interactionOpensModal(itype: number, customId: string): boolean {
+  return itype === 3 && (customId === "ticket_create" || customId === "intake_start");
+}
+
 export function startInteractionGateway(opts: {
   token: string;
   ctx: () => EnvoyContext;
@@ -93,7 +98,7 @@ export function startInteractionGateway(opts: {
         op: 2,
         d: {
           token: opts.token,
-          intents: 1,
+          intents: 0,
           compress: false,
           properties: { os: "linux", browser: "mortis-envoy", device: "mortis-envoy" },
         },
@@ -104,6 +109,18 @@ export function startInteractionGateway(opts: {
     if (msg.op === 9) {
       st.lastError = "identify rejected (op 9)";
       st.connected = false;
+      st.sessionId = undefined;
+      seq = null;
+      try {
+        ws?.close(1000);
+      } catch {
+        /* */
+      }
+      ws = null;
+      if (!stopped) {
+        attempt += 1;
+        reconnectTimer = setTimeout(connect, Math.min(3000 * attempt, 15000));
+      }
       return;
     }
     if (msg.op === 0 && msg.t === "READY") {
@@ -121,7 +138,7 @@ export function startInteractionGateway(opts: {
       const itype = Number(d.type ?? 0);
       const data = (d.data ?? {}) as { custom_id?: string };
       const cid = String(data.custom_id ?? "");
-      const opensModal = itype === 3 && (cid === "ticket_create" || cid === "intake_start");
+      const opensModal = interactionOpensModal(itype, cid);
       let deferred = false;
       if (!opensModal && (itype === 2 || itype === 3 || itype === 5) && id && token) {
         try {

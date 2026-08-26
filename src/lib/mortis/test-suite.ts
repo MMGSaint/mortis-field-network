@@ -12,6 +12,7 @@ import { runFirstPlayerWalkthrough } from "./walkthrough.ts";
 import { assessHealth } from "./health.ts";
 import { commandPayloads } from "./commands.ts";
 import { enactLockdown, liftLockdown } from "./envoy.ts";
+import { interactionOpensModal } from "./discord-gateway.ts";
 
 export type TestResult = { id: string; name: string; pass: boolean; detail: string };
 
@@ -1130,6 +1131,90 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S46", "Health reports placement drift when parent is missing", hit, `findings=${h.drift.join(",")}`);
   } catch (e) {
     push("S46", "Health reports placement drift when parent is missing", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    rt.guild.failQueue.push({ status: 403, body: '{"message":"Missing Access","code":50013}', pathIncludes: "incident-actions" });
+    await enactLockdown(rt.ctx(), "owner_1");
+    const pass = rt.store.lockdown === true && rt.guild.invitesPaused === false && rt.store.invitesPaused === false;
+    push("S47", "Lockdown does not claim invites paused when incident-actions 403s", pass, `lockdown=${rt.store.lockdown} guildPaused=${rt.guild.invitesPaused} storePaused=${rt.store.invitesPaused}`);
+  } catch (e) {
+    push("S47", "Lockdown does not claim invites paused when incident-actions 403s", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    rt.guild.live = true;
+    const key = "arrival.terms";
+    const ch = rt.guild.channelById(rt.store.blueprintState.get(key)!)!;
+    ch.messages = [];
+    const h = assessHealth(rt.bp, rt.store, rt.guild);
+    const pinHit = h.findings.some((f) => f.code === "pin.missing");
+    push("S48", "Health does not false-positive pin.missing on empty hydrate cache", !pinHit, `pinHit=${pinHit}`);
+  } catch (e) {
+    push("S48", "Health does not false-positive pin.missing on empty hydrate cache", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const key = "network.traffic";
+    const ch = rt.guild.channelById(rt.store.blueprintState.get(key)!)!;
+    ch.permission_overwrites = ch.permission_overwrites.filter((o) => o.id !== rt.guild.id);
+    const h = assessHealth(rt.bp, rt.store, rt.guild);
+    const hit = h.findings.some((f) => f.code === "drift.overwrites" && f.target === key);
+    push("S49", "Health reports overwrite drift when @everyone row is missing", hit, `hit=${hit}`);
+  } catch (e) {
+    push("S49", "Health reports overwrite drift when @everyone row is missing", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const key = "network.status";
+    const ch = rt.guild.channelById(rt.store.blueprintState.get(key)!)!;
+    ch.topic = "";
+    const h = assessHealth(rt.bp, rt.store, rt.guild);
+    const hit = h.findings.some((f) => f.code === "drift.topic" && f.target === key);
+    push("S50", "Health reports topic drift when live topic is empty", hit, `hit=${hit}`);
+  } catch (e) {
+    push("S50", "Health reports topic drift when live topic is empty", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const pass =
+      interactionOpensModal(3, "ticket_create") &&
+      interactionOpensModal(3, "intake_start") &&
+      !interactionOpensModal(3, "terms_accept") &&
+      !interactionOpensModal(2, "ticket_create") &&
+      !interactionOpensModal(3, "");
+    push("S51", "Modal openers are ticket_create and intake_start only (type 3)", pass, `pass=${pass}`);
+  } catch (e) {
+    push("S51", "Modal openers are ticket_create and intake_start only (type 3)", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const body = '{"message":"Invalid Form Body","code":50035}';
+    rt.guild.failQueue.push(
+      { status: 400, body, pathIncludes: "/channels" },
+      { status: 400, body, pathIncludes: "/channels" },
+      { status: 400, body, pathIncludes: "/channels" },
+      { status: 400, body, pathIncludes: "/channels" },
+    );
+    let msg = "";
+    try {
+      await createTicket({ opener: "p_400", handle: "p", category: "general", body: "help" }, rt);
+    } catch (e) {
+      msg = e instanceof Error ? e.message : String(e);
+    }
+    push("S52", "Ticket create 400 surfaces Discord body and does not open a ticket", msg.includes("50035") && [...rt.store.tickets.values()].length === 0, `msg=${msg.slice(0, 120)} tickets=${rt.store.tickets.size}`);
+  } catch (e) {
+    push("S52", "Ticket create 400 surfaces Discord body and does not open a ticket", false, e instanceof Error ? e.message : String(e));
   }
 
   void writeFileSync;
