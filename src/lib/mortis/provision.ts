@@ -1,4 +1,4 @@
-import { generateOverwrites, permissionExcess, botPermissionInteger, PERM } from "./permissions.ts";
+import { generateOverwrites, permissionExcess, permissionMissing, botPermissionInteger, PERM } from "./permissions.ts";
 import { hashBlueprint, validateBlueprint } from "./blueprint.ts";
 import { dispatchSend, interactionRows } from "./dispatch.ts";
 import { withBackoff } from "./discord-sim.ts";
@@ -474,9 +474,19 @@ export async function apply(
     });
   }
 
-  const held = botPermissionInteger();
-  const extras = permissionExcess(held);
-  if (extras.length) warnings.push(`bot holds extra permissions: ${extras.join(", ")}`);
+  const liveHeld =
+    guild.live && "botPermissions" in guild && typeof (guild as { botPermissions?: string }).botPermissions === "string"
+      ? BigInt((guild as { botPermissions: string }).botPermissions || "0")
+      : null;
+  if (liveHeld !== null) {
+    if ((liveHeld & PERM.ADMINISTRATOR) !== 0n) {
+      warnings.push(`bot holds ADMINISTRATOR — re-invite with ${botPermissionInteger()}; do not keep Admin`);
+    }
+    const missing = permissionMissing(liveHeld);
+    if (missing.length) warnings.push(`bot missing required bits: ${missing.join(", ")} — re-invite with ${botPermissionInteger()}`);
+    const extras = permissionExcess(liveHeld);
+    if (extras.length) warnings.push(`bot holds extra permissions: ${extras.join(", ")}`);
+  }
 
   store.lastAppliedHash = before.hash;
   store.appendAudit({

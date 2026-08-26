@@ -38,7 +38,7 @@
       "neutral_fallback": true,
       "canon_ref": "MCA-OPS-PL-012",
       "title": "HOW TO BEGIN",
-      "body": "You arrived somewhere that was already running.\n\n1. Read CONDUCT AND TERMS. Press Accept.\n2. Go to ENTRY. Press Begin Intake. Give a callsign.\n3. After intake, NETWORK and FIELD channels open. Locked names you can see are names, not invitations.\n4. Notices and briefings appear in NOTICES. Technical status is NETWORK STATUS.\n5. Need help? SUPPORT DESK. Tickets are private. Categories: general, report, appeal, accessibility.\n6. What you witness is the world. What you can verify is your terminal. What you hear here is traffic.\n7. If you miss a notice, it is still a notice — not a secret test. Ask in QUESTIONS or open a ticket.\n\nRestricted does not mean false. It means you do not currently need it."
+      "body": "You arrived somewhere that was already running.\n\n1. Read CONDUCT AND TERMS. Press Accept.\n2. Go to ENTRY. Press Begin Intake. Give a callsign.\n3. After intake, NETWORK and FIELD channels open. Locked names you can see are names, not invitations.\n4. Notices and briefings appear in NOTICES. Technical status is NETWORK STATUS.\n5. Need help? SUPPORT DESK. Tickets are private. Categories: general, report, appeal, accessibility.\n6. What you witness is the world. What you can verify is your terminal. What you hear here is traffic.\n7. If you miss a notice, it is still a notice — not a secret test. Ask in QUESTIONS or open a ticket.\n8. /orient repeats this note. /ticket opens the same private desk as SUPPORT DESK.\n\nRestricted does not mean false. It means you do not currently need it."
     },
     {
       "key": "tpl.support.desk",
@@ -47,7 +47,7 @@
       "channel_key": "support.desk",
       "canon_ref": "MIN-IAT-013",
       "title": "SUPPORT DESK",
-      "body": "If you need help, open a ticket.\n\nCategories: general, report, appeal, accessibility.\n\nReports and appeals are visible only to OWNER and OPERATIONS.\n\nA person asking for help does not owe anyone a story."
+      "body": "If you need help, open a ticket.\n\nCategories: general, report, appeal, accessibility.\n\nReports and appeals are visible only to OWNER and OPERATIONS.\n\n/ticket also opens this desk. Accessibility tickets are private, same as general. A person asking for help does not owe anyone a story."
     },
     {
       "key": "tpl.community.vrchat",
@@ -66,7 +66,7 @@
       "neutral_fallback": true,
       "canon_ref": "MCA-OPS-PL-012",
       "title": "REFERENCE",
-      "body": "Functional answers. This is not an archive of record.\n\nHow do I get started?\nHOW TO BEGIN in ARRIVAL. Accept terms, then intake.\n\nWhat should I do first?\nRead CONDUCT AND TERMS. Complete ENTRY. Then watch NOTICES.\n\nHow does communication work?\nOPEN CHANNEL is in-character traffic. QUESTIONS is out-of-character and clear. NOTICES are posted, not debated.\n\nWhat are the basic conduct rules?\nCONDUCT AND TERMS. Consent for lasting harm to a character. Do not publish private real-world information. Staff can remove content. Appeals exist.\n\nHow do tickets work?\nSUPPORT DESK → Open ticket. Private channel. Report and appeal tickets go only to OWNER and OPERATIONS.\n\nHow do I get help?\nSUPPORT DESK, or QUESTIONS for non-private asks.\n\nWhere do I find approved information?\nYour terminal / Internal Network verifies. RECORDS only re-presents published player-safe material. Discord does not decide what is true.\n\nWhat happens if I miss something?\nNothing here is a hidden exam. Ask. Open a ticket if it is private.\n\nHow do Discord, the world, and the terminal relate?\nWitness the world. Verify on the terminal. Hear traffic here.\n\nWhat do I do if something goes wrong?\nSUPPORT DESK. If arrival is closed, wait for a further notice.\n\nWorld-content proposals are not taken in tickets. Staff will point you at the operators' inbox."
+      "body": "Functional answers. This is not an archive of record.\n\nHow do I get started?\nHOW TO BEGIN in ARRIVAL. Accept terms, then intake. /orient repeats that note.\n\nWhat should I do first?\nRead CONDUCT AND TERMS. Complete ENTRY. Then watch NOTICES.\n\nHow does communication work?\nOPEN CHANNEL is in-character traffic. QUESTIONS is out-of-character and clear. NOTICES are posted, not debated.\n\nWhat are the basic conduct rules?\nCONDUCT AND TERMS. Consent for lasting harm to a character. Do not publish private real-world information. Staff can remove content. Appeals exist.\n\nHow do tickets work?\nSUPPORT DESK → Open ticket, or /ticket. Private channel. Categories: general, report, appeal, accessibility. Report and appeal tickets go only to OWNER and OPERATIONS.\n\nWhat is an accessibility ticket?\nA private request at SUPPORT DESK. You do not owe anyone a story.\n\nHow do I get help?\nSUPPORT DESK, or QUESTIONS for non-private asks.\n\nWhere do I find approved information?\nYour terminal / Internal Network verifies. RECORDS only re-presents published player-safe material. Discord does not decide what is true.\n\nWhat happens if I miss something?\nNothing here is a hidden exam. Ask. Open a ticket if it is private.\n\nHow do Discord, the world, and the terminal relate?\nWitness the world. Verify on the terminal. Hear traffic here.\n\nWhat do I do if something goes wrong?\nSUPPORT DESK. If arrival is closed, wait for a further notice.\n\nWorld-content proposals are not taken in tickets. Staff will point you at the operators' inbox."
     },
     {
       "key": "tpl.ticket.system",
@@ -136,6 +136,26 @@
       "neutral_fallback": true,
       "title": "LOCKDOWN",
       "body": "Arrival is closed and invites are paused.\nThis is a safety action. Wait for a further notice."
+    },
+    {
+      "key": "tpl.ops.lockdown_lift",
+      "register": "OPERATIONAL",
+      "audience": "public",
+      "channel_key": "arrival.notice",
+      "class": "OPERATIONAL",
+      "neutral_fallback": true,
+      "title": "LOCKDOWN LIFTED",
+      "body": "Arrival is open again.\nThis is a safety-action all-clear. It is not a story event."
+    },
+    {
+      "key": "tpl.ops.restored",
+      "register": "OPERATIONAL",
+      "audience": "initiate+",
+      "channel_key": "network.status",
+      "class": "OPERATIONAL",
+      "neutral_fallback": true,
+      "title": "SERVICE RESTORED",
+      "body": "The Field Network interruption is over.\nStatus: {status}\nThis is a technical notice, not a story event."
     },
     {
       "key": "tpl.ops.intake",

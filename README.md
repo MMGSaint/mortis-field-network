@@ -49,8 +49,12 @@ npm run build
 Mortis engine only (skip platform PWA tests):
 
 ```
-node --experimental-strip-types --disable-warning=ExperimentalWarning --test tests/phase1/mandatory.test.ts
+npm run test:engine
 ```
+
+Clone URL: https://github.com/MMGSaint/mortis-field-network
+
+Read [docs/AGENT_HANDOFF.md](docs/AGENT_HANDOFF.md) next. Then [docs/OPERATIONS.md](docs/OPERATIONS.md) and [docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md).
 
 ## Simulator vs live Discord
 
@@ -59,7 +63,7 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning --test tes
 - Leave Discord **Interactions Endpoint URL blank** while using the workstation gateway.
 - Scratch guild (public id): `1540022458126700674`
 - Application id (public): `1540058003888410806`
-- Least-privilege permission integer: `294851834304`
+- Least-privilege permission integer: `295011699728`
 
 **Production Mortis Discord must not be Connected or Applied from this console.**
 

@@ -4,6 +4,7 @@ import { sha256Hex } from "./crypto.ts";
 import { scanAll, type ScanContext } from "./terms.ts";
 import type { Blueprint, TemplateBlueprint } from "./types.ts";
 import { BUNDLED_GUILD, BUNDLED_TEMPLATES } from "./bundled.ts";
+import { BOT_PERM_NAMES, botPermissionInteger, packPerms, type PermName } from "./permissions.ts";
 
 export type ValidationIssue = {
   level: "error" | "warn";
@@ -65,6 +66,14 @@ export function validateBlueprint(bp: Blueprint, cwd = process.cwd()): Validatio
   }
   if (bp.bot_permissions.bits.includes("ADMINISTRATOR")) {
     err("perms", "bot_permissions.bits", "ADMINISTRATOR bit present");
+  }
+  const packed = packPerms(bp.bot_permissions.bits.filter((b): b is PermName => (BOT_PERM_NAMES as string[]).includes(b)));
+  if (packed !== botPermissionInteger()) {
+    err(
+      "perms",
+      "bot_permissions.bits",
+      `packed ${packed} !== code integer ${botPermissionInteger()}`,
+    );
   }
 
   const allKeys = new Set<string>();

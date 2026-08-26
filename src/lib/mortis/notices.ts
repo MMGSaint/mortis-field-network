@@ -6,16 +6,20 @@ export type OperationalNoticeKind =
   | "outage"
   | "deployment"
   | "lockdown"
+  | "lockdown_lift"
   | "application_update"
-  | "intake";
+  | "intake"
+  | "restored";
 
 const MAP: Record<OperationalNoticeKind, { channel_key: string; template_key: string }> = {
   maintenance: { channel_key: "network.status", template_key: "tpl.ops.maintenance" },
   outage: { channel_key: "network.status", template_key: "tpl.ops.outage" },
   deployment: { channel_key: "network.status", template_key: "tpl.ops.deployment" },
   lockdown: { channel_key: "arrival.notice", template_key: "tpl.ops.lockdown" },
+  lockdown_lift: { channel_key: "arrival.notice", template_key: "tpl.ops.lockdown_lift" },
   application_update: { channel_key: "network.dispatches", template_key: "tpl.ops.release_notice" },
   intake: { channel_key: "network.status", template_key: "tpl.ops.intake" },
+  restored: { channel_key: "network.status", template_key: "tpl.ops.restored" },
 };
 
 /**

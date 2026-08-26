@@ -19,7 +19,9 @@
 
 ## Discord permissions
 
-Blueprint `never_administrator: true`. Invite integer `294851834304`. Missing access is fixed with **channel overwrites** (VIEW, SEND, READ_HISTORY, EMBED_LINKS, MANAGE_MESSAGES as needed), not Administrator.
+Blueprint `never_administrator: true`. Invite integer `295011699728` (derived from `BOT_PERM_NAMES`; never Administrator). Missing access is fixed with **channel overwrites** (VIEW, SEND, READ_HISTORY, EMBED_LINKS, MANAGE_MESSAGES, PIN_MESSAGES as needed), not Administrator.
+
+An earlier published figure `294851834304` was a transcription error. It omitted View Channel, Send Messages, Manage Channels, Manage Roles, and Connect. If the scratch bot was invited with that URL, re-invite with `295011699728`. Do not keep Administrator.
 
 ## Dispatch boundary
 
@@ -39,4 +41,4 @@ Scratch confirmation is required for live attach. Production guild must not be t
 
 ## Audit / lockdown
 
-Audit rows append in store and mirror to `staff.audit`. Lockdown closes arrival and pauses invites; notice goes through dispatch. Kill switch returns 404 on interactions until lifted.
+Audit rows append in store and mirror to `staff.audit`. Lockdown closes arrival and pauses invites; notice goes through dispatch; lift posts an all-clear through dispatch. Kill switch returns 404 on interactions until lifted (Security → Lift kill switch).

@@ -100,7 +100,11 @@ function ticketName(category: string, opener: string): string {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+  return s
+    .replace(/&/g, "\x26amp;")
+    .replace(/</g, "\x26lt;")
+    .replace(/>/g, "\x26gt;")
+    .replace(/"/g, "\x26quot;");
 }
 
 async function postTicketChannel(

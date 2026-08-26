@@ -14,8 +14,8 @@ In Grok Build the preview starts via `startup.sh`.
 
 ## Tests
 
-Engine: `tests/phase1/mandatory.test.ts` (T1–T9, S1–S40).  
-Workstation Tests page also runs the suite and the first-player walkthrough.
+Engine: `npm run test:engine` (T1–T9, S1–S46).  
+Workstation Tests page also runs the suite and the first-player walkthrough (isolated runtime — it does not Apply the operator guild).
 
 ## Provisioning
 
@@ -30,7 +30,7 @@ Validate → Plan → Apply. Identity is blueprint key. Running Apply twice is a
 5. Connect. Wait gateway READY.
 6. Validate → Plan. Read the plan. Apply only if intended.
 7. Leave Discord Interactions Endpoint URL **blank**.
-8. Least privilege `294851834304`. Never Administrator.
+8. Least privilege `295011699728`. Never Administrator. If the bot currently holds Admin, re-invite.
 
 If buttons time out, gateway is not READY or Discord still has a placeholder Interactions URL.
 
@@ -42,7 +42,7 @@ Provision → Health. Report-only. Missing, topic/placement/overwrite drift, orp
 
 - Notice mistake: Dispatch → Retract (channel key + message id + reason).
 - Leaked webhook URL: Provision → Rotate webhooks.
-- Interactions misbehaving: Security → kill switch, then lift.
+- Interactions misbehaving: Security → kill switch, then Lift kill switch.
 - Process restart: token is gone. Connect again. Bindings reload from `data/scratch-guild-state.json`.
 
 ## Rollback

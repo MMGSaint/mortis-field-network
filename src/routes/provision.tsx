@@ -37,8 +37,8 @@ function Provision() {
     queryFn: () => getSnapshot(),
     refetchInterval: 3000,
   });
-  const [guildId, setGuildId] = useState("");
-  const [appId, setAppId] = useState("");
+  const [guildId, setGuildId] = useState("1540022458126700674");
+  const [appId, setAppId] = useState("1540058003888410806");
   const [token, setToken] = useState("");
   const [publicKey, setPublicKey] = useState("");
   const [scratch, setScratch] = useState(false);
@@ -108,6 +108,16 @@ function Provision() {
           {live?.connected ? ` · gateway ${live.gateway?.connected ? "ready" : "connecting…"}` : ""}
           {live?.connected && live.gateway?.lastEvent ? ` · ${live.gateway.lastEvent}` : ""}
         </p>
+        {live?.connected && live.administrator && (
+          <p className="text-sm text-brass">
+            Bot currently holds Administrator. Re-invite with integer {snap.data?.perms}. Channel overwrites cover access — do not keep Admin.
+          </p>
+        )}
+        {live?.connected && (live.missingBits?.length ?? 0) > 0 && !live.administrator && (
+          <p className="text-sm text-brass">
+            Missing required bits: {live.missingBits?.join(", ")}. Re-invite with integer {snap.data?.perms}.
+          </p>
+        )}
         {live?.connected && live.gateway && (
           <p className="text-sm text-muted">
             Gateway {live.gateway.connected ? "ready" : "not ready"}
@@ -174,9 +184,10 @@ function Provision() {
       <div className="flex flex-wrap gap-2">
         <Action label="Validate" onClick={() => validate.mutate()} busy={validate.isPending} />
         <Action label="Plan" onClick={() => plan.mutate()} busy={plan.isPending} />
-        <Action label="Apply" onClick={() => apply.mutate()} busy={apply.isPending} primary />
+        <Action label="Apply" onClick={() => apply.mutate()} busy={apply.isPending} primary disabled={!plan.data} />
         <Action label="Health" onClick={() => health.mutate()} busy={health.isPending} />
       </div>
+      {!plan.data && <p className="text-sm text-muted">Read Plan before Apply. Apply stays disabled until a plan exists in this session.</p>}
       {apply.error && <p className="text-sm text-brass">Apply failed: {apply.error.message}</p>}
 
       {validate.data && (
@@ -212,7 +223,6 @@ function Provision() {
           creates {plan.data.creates} · updates {plan.data.updates} · orphans {plan.data.orphans} · noops {plan.data.noops}
           <p className="mt-2 text-muted">NO DESTRUCTIVE OPERATIONS. Orphans are reported only — never auto-deleted. History archive-lock only with per-item confirm.</p>
           <PlanViz ops={plan.data.ops} />
-          <pre className="mt-3 max-h-64 overflow-auto text-kicker text-muted">{JSON.stringify(plan.data.ops.slice(0, 80), null, 2)}</pre>
         </Panel>
       )}
       {apply.data && (
@@ -299,12 +309,12 @@ function PlanViz({ ops }: { ops: PlanOp[] }) {
   );
 }
 
-function Action({ label, onClick, busy, primary }: { label: string; onClick: () => void; busy?: boolean; primary?: boolean }) {
+function Action({ label, onClick, busy, primary, disabled }: { label: string; onClick: () => void; busy?: boolean; primary?: boolean; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={busy}
+      disabled={busy || disabled}
       className={
         primary
           ? "min-h-11 border border-brass bg-brass px-4 text-kicker tracking-kicker uppercase text-ink disabled:opacity-50"

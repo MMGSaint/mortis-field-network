@@ -3,7 +3,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SignedGate } from "@/components/signed-gate";
-import { getSnapshot, runIntake, runLockdown, runLiftLockdown, runKillSwitch, runHealth } from "@/lib/mortis/server";
+import { getSnapshot, runIntake, runLockdown, runLiftLockdown, runKillSwitch, runLiftKillSwitch, runHealth } from "@/lib/mortis/server";
 
 export const Route = createFileRoute("/security")({ component: Page });
 
@@ -27,11 +27,20 @@ function Security() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["snapshot"] }),
   });
   const intake = useMutation({
-    mutationFn: () => runIntake({ data: { snowflake: "demo_player", handle: "Initiate", callsign: "Hearth" } }),
+    mutationFn: () => {
+      if (snap.data?.live.connected) {
+        throw new Error("demo handles are simulator-only — live Discord needs a real member snowflake");
+      }
+      return runIntake({ data: { snowflake: "demo_player", handle: "Initiate", callsign: "Hearth" } });
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["snapshot"] }),
   });
   const kill = useMutation({
     mutationFn: () => runKillSwitch(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["snapshot"] }),
+  });
+  const liftKill = useMutation({
+    mutationFn: () => runLiftKillSwitch(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["snapshot"] }),
   });
   const health = useMutation({
@@ -74,6 +83,9 @@ function Security() {
         <button type="button" onClick={() => kill.mutate()} className="min-h-11 border border-brass px-4 text-kicker uppercase text-brass">
           Kill interactions
         </button>
+        <button type="button" onClick={() => liftKill.mutate()} className="min-h-11 border border-line px-4 text-kicker uppercase">
+          Lift kill switch
+        </button>
         <button type="button" onClick={() => health.mutate()} className="min-h-11 border border-line px-4 text-[12px] uppercase">
           Health
         </button>
@@ -95,8 +107,11 @@ function Security() {
         </section>
       )}
       {health.error && <p className="text-sm text-brass">{health.error.message}</p>}
-      {kill.data && <p className="text-sm text-brass">Kill switch {kill.data.killed ? "engaged" : "not engaged"} (status {kill.data.status}). Process restart required to restore.</p>}
+      {kill.data && <p className="text-sm text-brass">Kill switch {kill.data.killed ? "engaged" : "not engaged"} (status {kill.data.status}).</p>}
+      {liftKill.data && <p className="text-sm text-muted">Kill switch lifted. Interactions answer again.</p>}
       {kill.error && <p className="text-sm text-brass">{kill.error.message}</p>}
+      {liftKill.error && <p className="text-sm text-brass">{liftKill.error.message}</p>}
+      {intake.error && <p className="text-sm text-brass">{intake.error.message}</p>}
       <p className="text-muted">Members: {snap.data?.members.length ?? 0} · lockdown {snap.data?.lockdown ? "on" : "off"} · killed {snap.data?.killed ? "yes" : "no"}</p>
     </div>
   );

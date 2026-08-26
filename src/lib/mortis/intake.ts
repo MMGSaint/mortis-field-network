@@ -56,14 +56,22 @@ export async function completeIntake(
     member = await acceptTerms(ctx.store, input.snowflake, input.handle, ctx.guild);
   }
   if (member.intake_state === "complete") {
+    const initiateRole = ctx.store.blueprintState.get("role.initiate");
+    if (initiateRole) {
+      if (!ctx.guild.members.has(input.snowflake)) {
+        ctx.guild.seedMember(input.snowflake, input.handle, []);
+      }
+      try {
+        await ctx.guild.addRole(input.snowflake, initiateRole);
+      } catch {
+        /* retry grant on already-complete; Discord 403 is non-fatal here */
+      }
+    }
     return { member, already: true };
   }
 
   member.callsign = input.callsign ?? member.callsign;
   member.handle = input.handle;
-  member.intake_state = "complete";
-  member.updated_at = new Date().toISOString();
-  ctx.store.members.set(input.snowflake, member);
 
   const initiateRole = ctx.store.blueprintState.get("role.initiate");
   if (initiateRole) {
@@ -72,6 +80,10 @@ export async function completeIntake(
     }
     await ctx.guild.addRole(input.snowflake, initiateRole);
   }
+
+  member.intake_state = "complete";
+  member.updated_at = new Date().toISOString();
+  ctx.store.members.set(input.snowflake, member);
 
   const aud = ctx.store.appendAudit({
     actor: input.snowflake,

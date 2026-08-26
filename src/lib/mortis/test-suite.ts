@@ -7,9 +7,11 @@ import { generateEd25519HexPair, signEd25519Hex, canonicalStringify, verifyRelea
 import { loadTermList, resetTermCache, injectTermListForTest, scanRestricted, scanDeveloper } from "./terms.ts";
 import { createEvent, markEligible, enact } from "./events.ts";
 import { createTicket, claimTicket, closeTicket, staffCanViewTicket, reopenTicket } from "./tickets.ts";
-import { PERM } from "./permissions.ts";
+import { PERM, botInviteUrl, botPermissionInteger, BOT_PERMISSION_INTEGER, permissionMissing, permissionExcess } from "./permissions.ts";
 import { runFirstPlayerWalkthrough } from "./walkthrough.ts";
 import { assessHealth } from "./health.ts";
+import { commandPayloads } from "./commands.ts";
+import { enactLockdown, liftLockdown } from "./envoy.ts";
 
 export type TestResult = { id: string; name: string; pass: boolean; detail: string };
 
@@ -922,14 +924,18 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
   try {
     const rt = await fresh(cwd);
     await rt.apply();
-    const t = await createTicket({ opener: "p_html", handle: "p", category: "general", body: "close me" }, rt);
+    const t = await createTicket({ opener: "p_html", handle: "p", category: "general", body: "<script>alert(1)</script>" }, rt);
     await closeTicket(rt.store, rt.guild, t.id, "owner_1", rt.bp);
     const html = rt.store.r2.get(`transcripts/${t.id}.html`) ?? "";
     const txt = rt.store.r2.get(`transcripts/${t.id}.txt`) ?? "";
     push(
       "S35",
       "Closed ticket stores txt + html transcript",
-      t.transcript_key === `transcripts/${t.id}.txt` && txt.includes("close me") && html.includes("<pre>") && !html.includes("<script>"),
+      t.transcript_key === `transcripts/${t.id}.txt` &&
+        txt.includes("<script>alert(1)</script>") &&
+        html.includes("<pre>") &&
+        html.includes("\x26lt;script\x26gt;") &&
+        !html.includes("<script>alert"),
       `key=${t.transcript_key} html=${html.length}`,
     );
   } catch (e) {
@@ -1008,6 +1014,122 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     );
   } catch (e) {
     push("S40", "Webhook rotation updates bound URLs and dispatch still delivers", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const packed = botPermissionInteger();
+    const invite = botInviteUrl("1540058003888410806");
+    const wrong = 294851834304n;
+    const missingFromWrong = permissionMissing(wrong);
+    const excessAdmin = permissionExcess(PERM.ADMINISTRATOR | packed);
+    const pass =
+      packed === BOT_PERMISSION_INTEGER &&
+      packed === 295011699728n &&
+      (packed & PERM.ADMINISTRATOR) === 0n &&
+      (packed & PERM.MANAGE_GUILD) === 0n &&
+      (packed & PERM.VIEW_CHANNEL) !== 0n &&
+      (packed & PERM.SEND_MESSAGES) !== 0n &&
+      (packed & PERM.MANAGE_CHANNELS) !== 0n &&
+      (packed & PERM.MANAGE_ROLES) !== 0n &&
+      invite.includes("permissions=295011699728") &&
+      missingFromWrong.includes("VIEW_CHANNEL") &&
+      missingFromWrong.includes("MANAGE_CHANNELS") &&
+      excessAdmin.includes("ADMINISTRATOR");
+    push(
+      "S41",
+      "Least-privilege integer is 295011699728 and encodes the published bit set",
+      pass,
+      `packed=${packed} wrongMissing=${missingFromWrong.join(",")}`,
+    );
+  } catch (e) {
+    push("S41", "Least-privilege integer is 295011699728 and encodes the published bit set", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const hAdmin = assessHealth(rt.bp, rt.store, rt.guild, { administrator: true, botPermissions: "8" });
+    const hWrong = assessHealth(rt.bp, rt.store, rt.guild, { administrator: false, botPermissions: "294851834304" });
+    const adminHold = hAdmin.findings.some((f) => f.code === "perms.administrator" && f.severity === "hold");
+    const missingHold = hWrong.findings.some((f) => f.code === "perms.missing" && f.severity === "hold");
+    push("S42", "Health HOLDs on Administrator and on the transcribed-wrong invite integer", adminHold && missingHold, `admin=${adminHold} missing=${missingHold}`);
+  } catch (e) {
+    push("S42", "Health HOLDs on Administrator and on the transcribed-wrong invite integer", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    await enactLockdown(rt.ctx(), "owner_1");
+    await liftLockdown(rt.ctx(), "owner_1");
+    const dest = rt.guild.channelById(rt.store.blueprintState.get("arrival.notice")!);
+    const posted = (dest?.messages ?? []).some((m) => /Arrival is open again/i.test(m.content));
+    push("S43", "Lockdown lift posts all-clear through dispatch", rt.store.lockdown === false && posted, `lockdown=${rt.store.lockdown} posted=${posted}`);
+  } catch (e) {
+    push("S43", "Lockdown lift posts all-clear through dispatch", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    rt.killed = true;
+    const ping = JSON.stringify({ type: 1 });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const signed = await rt.signDiscordBody(ping, ts);
+    const dead = await rt.fetch(
+      new Request("https://envoy.local/interactions", {
+        method: "POST",
+        headers: { "x-signature-ed25519": signed.signature, "x-signature-timestamp": ts },
+        body: ping,
+      }),
+    );
+    const lift = await rt.fetch(
+      new Request("https://envoy.local/cli/unkill", {
+        method: "POST",
+        headers: { authorization: `Bearer ${rt.env.CLI_SECRET}` },
+      }),
+    );
+    const alive = await rt.fetch(
+      new Request("https://envoy.local/interactions", {
+        method: "POST",
+        headers: { "x-signature-ed25519": signed.signature, "x-signature-timestamp": ts },
+        body: ping,
+      }),
+    );
+    const liftJson = (await lift.json()) as { killed?: boolean };
+    push(
+      "S44",
+      "Kill switch can be lifted without process restart",
+      dead.status === 404 && lift.status === 200 && liftJson.killed === false && alive.status === 200,
+      `dead=${dead.status} lift=${lift.status} alive=${alive.status} killed=${rt.killed}`,
+    );
+  } catch (e) {
+    push("S44", "Kill switch can be lifted without process restart", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    const cmds = commandPayloads(rt.bp);
+    const ticket = cmds.find((c) => c.name === "ticket");
+    const cat = ticket?.options?.find((o) => o.name === "category");
+    const values = (cat?.choices ?? []).map((c) => c.value).sort().join("|");
+    const pass = values === "accessibility|appeal|general|report";
+    push("S45", "Slash /ticket category uses Discord choices", pass, `values=${values}`);
+  } catch (e) {
+    push("S45", "Slash /ticket category uses Discord choices", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const key = "network.traffic";
+    const id = rt.store.blueprintState.get(key)!;
+    const ch = rt.guild.channelById(id)!;
+    ch.parent_id = null;
+    const h = assessHealth(rt.bp, rt.store, rt.guild);
+    const hit = h.findings.some((f) => f.code === "drift.placement" && f.target === key);
+    push("S46", "Health reports placement drift when parent is missing", hit, `findings=${h.drift.join(",")}`);
+  } catch (e) {
+    push("S46", "Health reports placement drift when parent is missing", false, e instanceof Error ? e.message : String(e));
   }
 
   void writeFileSync;

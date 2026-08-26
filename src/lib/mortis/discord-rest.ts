@@ -6,7 +6,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { SimulatedGuild, type SimChannel, type SimRole } from "./discord-sim.ts";
-import { PERM } from "./permissions.ts";
+import { BOT_PERM_NAMES, PERM } from "./permissions.ts";
 import type { Overwrite } from "./permissions.ts";
 
 const API = "https://discord.com/api/v10";
@@ -106,7 +106,20 @@ function mapChannel(raw: Record<string, unknown>, webhook?: SimChannel["webhook"
 export function attachCurrentRestMethods(guild: SimulatedGuild): void {
   if (!guild.live) return;
   const proto = DiscordRestGuild.prototype as unknown as Record<string, unknown>;
-  for (const name of ["listPins", "editMessage", "unpinMessage", "postMessage", "pinMessage", "deleteMessage", "api", "putGuildCommands"]) {
+  for (const name of [
+    "listPins",
+    "editMessage",
+    "unpinMessage",
+    "postMessage",
+    "pinMessage",
+    "deleteMessage",
+    "api",
+    "putGuildCommands",
+    "createChannel",
+    "createWebhook",
+    "addRole",
+    "createRole",
+  ]) {
     const fn = proto[name];
     if (typeof fn === "function") {
       (guild as unknown as Record<string, unknown>)[name] = (fn as (...args: never[]) => unknown).bind(guild);
@@ -129,7 +142,8 @@ export const BOT_MEMBER_ALLOW = (
   PERM.EMBED_LINKS |
   PERM.MANAGE_MESSAGES |
   PERM.MANAGE_CHANNELS |
-  PERM.MANAGE_WEBHOOKS
+  PERM.MANAGE_WEBHOOKS |
+  PERM.PIN_MESSAGES
 ).toString();
 
 export async function ensureBotChannelAccess(
@@ -278,20 +292,7 @@ export class DiscordRestGuild extends SimulatedGuild {
 
     const held = BigInt(this.botPermissions);
     const administrator = (held & PERM.ADMINISTRATOR) !== 0n;
-    const required: Array<[string, bigint]> = [
-      ["VIEW_CHANNEL", PERM.VIEW_CHANNEL],
-      ["SEND_MESSAGES", PERM.SEND_MESSAGES],
-      ["EMBED_LINKS", PERM.EMBED_LINKS],
-      ["READ_MESSAGE_HISTORY", PERM.READ_MESSAGE_HISTORY],
-      ["MANAGE_CHANNELS", PERM.MANAGE_CHANNELS],
-      ["MANAGE_ROLES", PERM.MANAGE_ROLES],
-      ["MANAGE_WEBHOOKS", PERM.MANAGE_WEBHOOKS],
-      ["USE_APPLICATION_COMMANDS", PERM.USE_APPLICATION_COMMANDS],
-      ["MANAGE_THREADS", PERM.MANAGE_THREADS],
-      ["SEND_MESSAGES_IN_THREADS", PERM.SEND_MESSAGES_IN_THREADS],
-      ["CONNECT", PERM.CONNECT],
-    ];
-    const missingBits = required.filter(([, bit]) => (held & bit) === 0n).map(([n]) => n);
+    const missingBits = BOT_PERM_NAMES.filter((n) => (held & PERM[n]) === 0n);
 
     return {
       guildId: this.id,
@@ -404,8 +405,17 @@ export class DiscordRestGuild extends SimulatedGuild {
   }
 
   async listPins(channelId: string): Promise<SimChannel["messages"][number][]> {
-    const raw = await this.api<Array<Record<string, unknown>>>("GET", `/channels/${channelId}/pins`);
-    return (raw ?? []).map((m) => {
+    const raw = await this.api<unknown>("GET", `/channels/${channelId}/pins`);
+    const rows: Array<Record<string, unknown>> = Array.isArray(raw)
+      ? (raw as Array<Record<string, unknown>>)
+      : Array.isArray((raw as { items?: unknown[] } | null)?.items)
+        ? ((raw as { items: Array<Record<string, unknown>> }).items.map((item) =>
+            item && typeof item === "object" && "message" in item
+              ? (item.message as Record<string, unknown>)
+              : item,
+          ))
+        : [];
+    return rows.map((m) => {
       const author = (m.author as Record<string, unknown> | undefined) ?? {};
       return {
         id: String(m.id),

@@ -56,15 +56,15 @@
   ],
   "channels": [
     { "key": "arrival.notice", "category": "arrival", "kind": "text", "display": "NOTICE", "topic": "Read-only orientation. Current orders always outrank a static notice.", "audience": "public", "register": "dual", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.arrival.notice", "neutral_fallback": true },
+    { "key": "arrival.guide", "category": "arrival", "kind": "text", "display": "HOW TO BEGIN", "topic": "First steps. Functional guidance only. Not a lore dump.", "audience": "public", "register": "dual", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.arrival.guide", "neutral_fallback": true },
     { "key": "arrival.terms", "category": "arrival", "kind": "text", "display": "CONDUCT AND TERMS", "topic": "Plain-language conduct, consent, and terms. Accept before intake.", "audience": "public", "register": "dual", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.arrival.terms", "components": ["terms_accept"], "neutral_fallback": true },
     { "key": "arrival.intake", "category": "arrival", "kind": "text", "display": "ENTRY", "topic": "Intake processing. Interaction only.", "audience": "public", "register": "dual", "readonly": true, "webhook": true, "slowmode": 5, "pin_template": "tpl.arrival.intake", "components": ["intake_start"], "neutral_fallback": true },
-    { "key": "arrival.guide", "category": "arrival", "kind": "text", "display": "HOW TO BEGIN", "topic": "First steps. Functional guidance only. Not a lore dump.", "audience": "public", "register": "dual", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.arrival.guide", "neutral_fallback": true },
 
     { "key": "network.dispatches", "category": "network", "kind": "text", "display": "NOTICES", "topic": "Operational notices and briefings. Bot and staff only.", "audience": "initiate+", "register": "clear", "readonly": true, "webhook": true, "slowmode": 0, "neutral_fallback": true },
+    { "key": "network.reference", "category": "network", "kind": "text", "display": "REFERENCE", "topic": "Player-safe functional answers. Not an archive of record.", "audience": "initiate+", "register": "clear", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.network.reference", "neutral_fallback": true },
     { "key": "network.status", "category": "network", "kind": "text", "display": "NETWORK STATUS", "topic": "Technical status. Bot posted.", "audience": "initiate+", "register": "clear", "readonly": true, "webhook": true, "slowmode": 0, "canon_ref": "MCA-OPS-PL-012" },
     { "key": "network.traffic", "category": "network", "kind": "text", "display": "OPEN CHANNEL", "topic": "In-character traffic. Slowmode on.", "audience": "initiate+", "register": "ic", "readonly": false, "webhook": false, "slowmode": 5, "canon_ref": "MCA-OPS-PL-012" },
     { "key": "network.queries", "category": "network", "kind": "text", "display": "QUESTIONS", "topic": "Out-of-character questions. Keep it clear.", "audience": "initiate+", "register": "clear", "readonly": false, "webhook": false, "slowmode": 5, "neutral_fallback": true },
-    { "key": "network.reference", "category": "network", "kind": "text", "display": "REFERENCE", "topic": "Player-safe functional answers. Not an archive of record.", "audience": "initiate+", "register": "clear", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.network.reference", "neutral_fallback": true },
 
     { "key": "ops.board", "category": "operations", "kind": "text", "display": "MISSION ORDERS", "topic": "Current mission orders. Bot and staff; signup components as issued.", "audience": "initiate+", "register": "ic", "readonly": true, "webhook": true, "slowmode": 0, "canon_ref": "MCA-OPS-PL-012" },
     { "key": "ops.reports", "category": "operations", "kind": "text", "display": "FIELD REPORTS", "topic": "In-character field reports. The system does not referee truth.", "audience": "initiate+", "register": "ic", "readonly": false, "webhook": false, "slowmode": 10, "canon_ref": "MCA-OPS-PL-012" },
@@ -92,7 +92,7 @@
   "onboarding": {
     "enabled": true,
     "mode": "ONBOARDING_DEFAULT",
-    "default_channel_keys": ["arrival.notice", "arrival.terms", "arrival.intake", "arrival.guide"],
+    "default_channel_keys": ["arrival.notice", "arrival.guide", "arrival.terms", "arrival.intake"],
     "manual_toggles": [
       "Discord Safety Setup community enable (API-gated)",
       "Server membership screening rules screen if not covered by onboarding prompts",

@@ -4,6 +4,7 @@ export const PERM = {
   CREATE_INSTANT_INVITE: 1n << 0n,
   ADMINISTRATOR: 1n << 3n,
   MANAGE_CHANNELS: 1n << 4n,
+  MANAGE_GUILD: 1n << 5n,
   VIEW_CHANNEL: 1n << 10n,
   SEND_MESSAGES: 1n << 11n,
   MANAGE_MESSAGES: 1n << 13n,
@@ -17,6 +18,7 @@ export const PERM = {
   USE_APPLICATION_COMMANDS: 1n << 31n,
   MANAGE_THREADS: 1n << 34n,
   SEND_MESSAGES_IN_THREADS: 1n << 38n,
+  PIN_MESSAGES: 1n << 51n,
 } as const;
 
 export type PermName = keyof typeof PERM;
@@ -34,6 +36,17 @@ export const BOT_PERM_NAMES: PermName[] = [
   "SEND_MESSAGES_IN_THREADS",
   "CONNECT",
 ];
+
+/**
+ * Canonical least-privilege invite integer. Never Administrator, never Manage Server.
+ * Derived from BOT_PERM_NAMES.
+ *
+ * An earlier published figure `294851834304` was a transcription error: it omitted
+ * VIEW_CHANNEL, SEND_MESSAGES, MANAGE_CHANNELS, MANAGE_ROLES, and CONNECT, and
+ * included unrelated bits. If a scratch invite used that URL, re-invite with this
+ * integer. Do not "fix" 403s by adding Administrator.
+ */
+export const BOT_PERMISSION_INTEGER = 295011699728n;
 
 export function packPerms(names: PermName[]): bigint {
   return names.reduce((acc, n) => acc | PERM[n], 0n);
@@ -57,6 +70,33 @@ export function permissionExcess(held: bigint, required: bigint = botPermissionI
     if ((held & bit) !== 0n && (required & bit) === 0n) extras.push(name);
   }
   return extras;
+}
+
+export function permissionMissing(held: bigint, required: bigint = botPermissionInteger()): string[] {
+  if ((held & PERM.ADMINISTRATOR) !== 0n) return [];
+  const missing: string[] = [];
+  for (const name of BOT_PERM_NAMES) {
+    if ((required & PERM[name]) !== 0n && (held & PERM[name]) === 0n) missing.push(name);
+  }
+  return missing;
+}
+
+export type PermAudit = {
+  held: string;
+  required: string;
+  administrator: boolean;
+  missing: string[];
+  excess: string[];
+};
+
+export function auditHeldPermissions(held: bigint): PermAudit {
+  return {
+    held: held.toString(),
+    required: botPermissionInteger().toString(),
+    administrator: (held & PERM.ADMINISTRATOR) !== 0n,
+    missing: permissionMissing(held),
+    excess: permissionExcess(held),
+  };
 }
 
 export type Audience = "public" | "initiate+" | "granted" | "staff";

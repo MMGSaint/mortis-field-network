@@ -25,8 +25,10 @@ const KINDS: OperationalNoticeKind[] = [
   "maintenance",
   "outage",
   "lockdown",
+  "lockdown_lift",
   "intake",
   "application_update",
+  "restored",
 ];
 
 function Page() {
@@ -144,7 +146,7 @@ function Dispatch() {
         </label>
         <div className="flex flex-wrap gap-2">
           <button type="submit" disabled={mut.isPending || !snap.data?.lastAppliedHash} className="min-h-11 border border-brass px-4 text-kicker tracking-kicker uppercase text-brass disabled:opacity-40">
-            {mut.isPending ? "Sending…" : "Send as staff probe"}
+            {mut.isPending ? "Sending…" : "Send staff probe (NETWORK STATUS / deployment)"}
           </button>
           <button
             type="button"

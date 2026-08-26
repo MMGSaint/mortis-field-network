@@ -1,5 +1,5 @@
 import { channelByKey } from "./blueprint.ts";
-import { PERM } from "./permissions.ts";
+import { auditHeldPermissions, botPermissionInteger, PERM } from "./permissions.ts";
 import type { SimulatedGuild } from "./discord-sim.ts";
 import type { EnvoyStore } from "./store.ts";
 import type { Blueprint } from "./types.ts";
@@ -30,7 +30,12 @@ export function assessHealth(
   bp: Blueprint,
   store: EnvoyStore,
   guild: SimulatedGuild,
-  extra?: { gateway?: { connected: boolean; lastError?: string }; liveOrphans?: number },
+  extra?: {
+    gateway?: { connected: boolean; lastError?: string };
+    liveOrphans?: number;
+    botPermissions?: string;
+    administrator?: boolean;
+  },
 ): HealthReport {
   const findings: HealthFinding[] = [];
   const missing_channels: string[] = [];
@@ -55,13 +60,13 @@ export function assessHealth(
       findings.push({ severity: "warn", code: "drift.topic", target: ch.key, detail: "topic differs from blueprint" });
     }
     const catId = store.blueprintState.get(ch.category);
-    if (catId && live.parent_id && live.parent_id !== catId) {
+    if (catId && live.parent_id !== catId) {
       drift.push(ch.key);
       findings.push({
         severity: "warn",
         code: "drift.placement",
         target: ch.key,
-        detail: "channel parent differs from blueprint category",
+        detail: live.parent_id ? "channel parent differs from blueprint category" : "channel has no parent; blueprint expects a category",
       });
     }
     const everyone = live.permission_overwrites.find((o) => o.id === guild.id);
@@ -150,6 +155,38 @@ export function assessHealth(
         code: "unexpected.role",
         target: role.id,
         detail: `${role.name} is not bound — report-only`,
+      });
+    }
+  }
+
+  if (extra?.administrator || extra?.botPermissions !== undefined) {
+    let held = 0n;
+    try {
+      held = extra.botPermissions ? BigInt(extra.botPermissions) : 0n;
+    } catch {
+      held = 0n;
+    }
+    const audit = auditHeldPermissions(held);
+    if (audit.administrator || extra.administrator) {
+      findings.push({
+        severity: "hold",
+        code: "perms.administrator",
+        detail: `Bot holds Administrator. Re-invite with least-privilege integer ${botPermissionInteger()}. Channel overwrites cover access — do not keep Admin.`,
+      });
+    }
+    if (audit.missing.length) {
+      findings.push({
+        severity: "hold",
+        code: "perms.missing",
+        detail: `Missing ${audit.missing.join(", ")}. Re-invite with ${botPermissionInteger()}.`,
+      });
+    }
+    const extras = audit.excess.filter((x) => x !== "ADMINISTRATOR");
+    if (extras.length) {
+      findings.push({
+        severity: "warn",
+        code: "perms.excess",
+        detail: `Extra bits ${extras.join(", ")}. Re-invite to drop them.`,
       });
     }
   }

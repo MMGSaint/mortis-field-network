@@ -10,6 +10,7 @@ export type SlashCommandPayload = {
     description: string;
     type: number;
     required?: boolean;
+    choices?: Array<{ name: string; value: string }>;
   }>;
 };
 
@@ -23,7 +24,18 @@ export function commandPayloads(bp: Blueprint): SlashCommandPayload[] {
     };
     if (c.name === "ticket") {
       base.options = [
-        { name: "category", description: "general, report, appeal, or accessibility", type: 3, required: false },
+        {
+          name: "category",
+          description: "Ticket category",
+          type: 3,
+          required: false,
+          choices: [
+            { name: "general", value: "general" },
+            { name: "report", value: "report" },
+            { name: "appeal", value: "appeal" },
+            { name: "accessibility", value: "accessibility" },
+          ],
+        },
         { name: "body", description: "What you need", type: 3, required: true },
       ];
     }

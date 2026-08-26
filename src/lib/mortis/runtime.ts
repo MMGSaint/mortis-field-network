@@ -38,6 +38,8 @@ export type RuntimeSnapshot = {
     scratchConfirmed?: boolean;
     gateway?: { connected: boolean; lastEvent?: string; lastError?: string };
     overwriteWarnings?: string[];
+    missingBits?: string[];
+    permissions?: string;
   };
   health: { ok: boolean; holds: number; warns: number; missing: string[] };
   killed: boolean;
@@ -275,11 +277,13 @@ export class MortisRuntime {
       kill: () => {
         this.killed = true;
       },
+      liftKill: () => {
+        this.killed = false;
+      },
     };
   }
 
   async fetch(request: Request): Promise<Response> {
-    if (this.killed) return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
     return envoyFetch(request, this.ctx());
   }
 
@@ -343,6 +347,8 @@ export class MortisRuntime {
             guildName: this.liveIdentity?.guildName,
             botTag: this.liveIdentity?.botTag,
             administrator: this.liveIdentity?.administrator ?? false,
+            missingBits: this.liveIdentity?.missingBits,
+            permissions: this.liveIdentity?.permissions,
             channelCount: this.liveIdentity?.channelCount,
             scratchConfirmed: this.scratchConfirmed,
             gateway: this.gateway?.status() ?? { connected: false },
@@ -367,6 +373,8 @@ export class MortisRuntime {
   health(): HealthReport {
     return assessHealth(this.bp, this.store, this.guild, {
       gateway: this.gateway?.status(),
+      botPermissions: this.liveIdentity?.permissions,
+      administrator: this.liveIdentity?.administrator,
     });
   }
 

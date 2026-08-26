@@ -5,7 +5,7 @@ This describes the code in this repository, not a future design.
 ## Surfaces
 
 - **Workstation UI** — TanStack Start app (`src/routes`). Sign-in required for operator actions.
-- **MortisRuntime** — process singleton. Owns blueprint, store, guild transport, gateway handle, kill flag.
+- **MortisRuntime** — process singleton. Owns blueprint, store, guild transport, gateway handle, kill flag (liftable).
 - **SimulatedGuild** — default transport for tests and preview without a token.
 - **DiscordRestGuild** — live REST; created on Connect. Token lives in a WeakMap, not on disk.
 - **Gateway** — Discord Gateway v10 for `INTERACTION_CREATE`. ACK within 3s (type 4 or deferred type 5). Type 9 for modals.
@@ -26,7 +26,7 @@ Identity is **blueprint key**, not channel name. Apply is idempotent (hash + bin
 4. Restricted-term scan  
 5. Developer-term scan  
 6. Destination  
-7. Deliver (`discordDeliver`; webhook fallback on 403)  
+7. Deliver (`discordDeliver`; webhook fallback on 403; Discord body surfaces on failure)  
 8. Audit (+ staff.audit / staff.inbox mirrors)
 
 Staff destinations skip steps 2–6. Failures **block**. They never redact.

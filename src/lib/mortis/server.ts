@@ -291,8 +291,11 @@ export const runHealth = createServerFn({ method: "POST" })
 export const runWalkthrough = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async () => {
-    const rt = await runtime();
-    return rt.walkthrough();
+    const isolated = MortisRuntime.load(process.cwd());
+    await isolated.bootstrapKeys();
+    isolated.seedOwner("owner_1", "owner");
+    isolated.seedOperations("ops_1", "ops");
+    return isolated.walkthrough();
   });
 
 export const runNotice = createServerFn({ method: "POST" })
@@ -327,6 +330,19 @@ export const runKillSwitch = createServerFn({ method: "POST" })
     const rt = await runtime();
     const res = await rt.fetch(
       new Request("https://envoy.local/cli/kill", {
+        method: "POST",
+        headers: { authorization: `Bearer ${rt.env.CLI_SECRET}` },
+      }),
+    );
+    return { ok: res.ok, killed: rt.killed, status: res.status };
+  });
+
+export const runLiftKillSwitch = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const rt = await runtime();
+    const res = await rt.fetch(
+      new Request("https://envoy.local/cli/unkill", {
         method: "POST",
         headers: { authorization: `Bearer ${rt.env.CLI_SECRET}` },
       }),

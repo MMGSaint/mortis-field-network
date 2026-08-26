@@ -104,7 +104,7 @@ function Landing() {
 }
 
 function NetworkMap() {
-  const q = useQuery({ queryKey: ["snapshot"], queryFn: () => getSnapshot() });
+  const q = useQuery({ queryKey: ["snapshot"], queryFn: () => getSnapshot(), refetchInterval: 3000 });
   const data = q.data;
   const applied = Boolean(data?.lastAppliedHash);
 
@@ -122,7 +122,7 @@ function NetworkMap() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="State" value={applied ? "Applied" : "Blank guild"} />
-        <Stat label="Transport" value={data?.live.connected ? "Live Discord" : "Simulator"} />
+        <Stat label="Transport" value={data?.live.connected ? (data.live.gateway?.connected ? "Live · gateway ready" : "Live · gateway not ready") : "Simulator"} />
         <Stat label="Lockdown" value={data?.lockdown ? "Active" : "Open"} />
         <Stat label="Open tickets" value={String(data?.tickets.filter((t) => t.status !== "closed").length ?? 0)} />
       </div>
@@ -131,6 +131,8 @@ function NetworkMap() {
         <p className="text-sm text-muted">
           Health {data.health.ok ? "clear" : `${data.health.holds} hold(s), ${data.health.warns} warn(s)`}
           {data.health.missing.length ? ` · missing ${data.health.missing.join(", ")}` : ""}
+          {data.live.connected && data.live.gateway && !data.live.gateway.connected ? " · gateway not READY — buttons will time out" : ""}
+          {data.live.administrator ? " · bot holds Administrator — re-invite" : ""}
           {data.killed ? " · interactions killed" : ""}
         </p>
       )}
@@ -167,7 +169,7 @@ function NetworkMap() {
           {(data?.roles ?? []).map((r) => (
             <li key={r.key} className="border border-line px-2 py-1 text-micro tracking-kicker uppercase">
               {r.display}
-              <span className="ml-2 text-muted">{r.tier}</span>
+              <span className="ml-2 text-muted">{r.tier}{r.key === "role.shadow" ? " · not issued" : ""}</span>
             </li>
           ))}
         </ul>
@@ -182,7 +184,11 @@ function NextAction({
 }: {
   data:
     | {
-        live: { connected: boolean };
+        live: {
+          connected: boolean;
+          administrator?: boolean;
+          gateway?: { connected: boolean; lastEvent?: string; lastError?: string };
+        };
         health: { ok: boolean; holds: number; warns: number };
         tickets: Array<{ status: string }>;
         killed: boolean;
@@ -210,6 +216,16 @@ function NextAction({
     body = "Arrival is closed. Lift from Security when the safety action is complete.";
     href = "/security";
     cta = "Open security";
+  } else if (data?.live.connected && data.live.gateway && !data.live.gateway.connected) {
+    title = "Gateway not ready";
+    body = "Buttons will time out until READY. Wait, or Reconnect gateway on Provision. Leave the Interactions Endpoint URL blank.";
+    href = "/provision";
+    cta = "Open provisioner";
+  } else if (data?.live.administrator) {
+    title = "Bot holds Administrator";
+    body = "Re-invite with the least-privilege integer shown on Provision. Do not keep Admin — channel overwrites cover access.";
+    href = "/provision";
+    cta = "Open provisioner";
   } else if (data && !data.health.ok) {
     title = "Health holds";
     body = `${data.health.holds} hold(s), ${data.health.warns} warn(s). Report-only — nothing is auto-deleted.`;

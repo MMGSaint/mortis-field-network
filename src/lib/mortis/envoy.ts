@@ -55,19 +55,22 @@ export type EnvoyContext = {
   cwd?: string;
   isKilled?: () => boolean;
   kill?: () => void;
+  liftKill?: () => void;
 };
 
 /**
- * Gateway-less Worker fetch handler.
+ * HTTP Interactions + CLI fetch handler.
+ * Workstation ACK uses the in-process gateway; this path is for a later Worker.
  * Discord interactions verified before parse.
  * No calls to mortis-relay. No third-party APIs. No canon.
  */
 export async function envoyFetch(request: Request, ctx: EnvoyContext): Promise<Response> {
-  if (ctx.isKilled?.()) {
-    return new Response(UNIFORM_404, { status: 404, headers: UNIFORM_404_HEADERS });
-  }
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
+  const unkill = path === "/cli/unkill" && request.method === "POST";
+  if (ctx.isKilled?.() && !unkill) {
+    return new Response(UNIFORM_404, { status: 404, headers: UNIFORM_404_HEADERS });
+  }
 
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -350,6 +353,10 @@ export async function liftLockdown(ctx: EnvoyContext, actor: string): Promise<vo
     action: "lockdown.lift",
     details: { arrival: "open", invites: "resumed", invite_api: pause.detail },
   });
+  await dispatchSend(
+    { channel_key: "arrival.notice", template_key: "tpl.ops.lockdown_lift", fields: {}, caller: { type: "owner-cli" } },
+    ctx,
+  );
 }
 
 async function handleCli(path: string, request: Request, ctx: EnvoyContext): Promise<Response> {
@@ -380,6 +387,11 @@ async function handleCli(path: string, request: Request, ctx: EnvoyContext): Pro
     ctx.store.appendAudit({ actor: "owner-cli", action: "kill_switch", details: { interactions: "disabled" } });
     ctx.kill?.();
     return json(200, { ok: true, killed: true });
+  }
+  if (path === "/cli/unkill" && request.method === "POST") {
+    ctx.liftKill?.();
+    ctx.store.appendAudit({ actor: "owner-cli", action: "kill_switch.lift", details: { interactions: "enabled" } });
+    return json(200, { ok: true, killed: false });
   }
   return uniform404();
 }

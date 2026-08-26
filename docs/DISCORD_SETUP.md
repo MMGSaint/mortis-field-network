@@ -26,7 +26,7 @@ OAuth2 → URL Generator.
 - `bot`
 - `applications.commands`
 
-**Guild permissions — least privilege, integer `294851834304`:**
+**Guild permissions — least privilege, integer `295011699728`:**
 
 | Required | Not required (do not tick) |
 |---|---|
@@ -44,10 +44,12 @@ OAuth2 → URL Generator.
 
 Never Administrator. If the bot later shows Administrator, **stop** — re-invite with this integer.
 
+A previously published integer `294851834304` was a transcription error (it omitted View Channel, Send Messages, Manage Channels, Manage Roles, and Connect). The workstation invite URL is generated from `botPermissionInteger()` and is the source of truth.
+
 Invite URL (replace APPLICATION_ID):
 
 ```
-https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&permissions=294851834304&scope=bot%20applications.commands
+https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&permissions=295011699728&scope=bot%20applications.commands
 ```
 
 Invite **only** to the scratch guild.

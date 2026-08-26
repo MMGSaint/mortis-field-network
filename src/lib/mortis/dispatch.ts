@@ -186,7 +186,9 @@ export async function dispatchSend(
     const msg = await discordDeliver(guild, store, liveId, body, ch.webhook, interactionRows(ch.components));
     messageId = msg.id;
   } catch (e) {
-    return fail(7, e instanceof Error ? e.message : "send failed");
+    const err = e as Error & { body?: string };
+    const detail = err.body ? `${err.message} ${err.body}`.slice(0, 400) : err instanceof Error ? err.message : "send failed";
+    return fail(7, detail);
   }
 
   // 8 Audit complete
@@ -317,7 +319,7 @@ export async function retractMessage(
     return { ok: false, reason: "unknown channel", audit_id: audit.id };
   }
   const live = guild.channelById(chId);
-  const exists = live?.messages.some((m) => m.id === messageId);
+  const existsLocal = Boolean(live?.messages.some((m) => m.id === messageId));
   const audit = store.appendAudit({
     actor,
     action: "dispatch.retract",
@@ -325,11 +327,19 @@ export async function retractMessage(
     details: { messageId, reason },
     outcome: "pending",
   });
-  if (!exists) {
+  if (!guild.live && !existsLocal) {
     store.completeAudit(audit.id, "fail", { reason: "message not found" });
     return { ok: false, reason: "message not found", audit_id: audit.id };
   }
-  await guild.deleteMessage(chId, messageId);
+  try {
+    await guild.deleteMessage(chId, messageId);
+  } catch (e) {
+    const err = e as Error & { status?: number; body?: string };
+    const reasonText =
+      err.status === 404 ? "message not found" : err.body ? `${err.message} ${err.body}`.slice(0, 240) : err.message;
+    store.completeAudit(audit.id, "fail", { reason: reasonText, status: err.status });
+    return { ok: false, reason: reasonText, audit_id: audit.id };
+  }
   store.completeAudit(audit.id, "ok");
   return { ok: true, audit_id: audit.id };
 }

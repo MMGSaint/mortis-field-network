@@ -92,7 +92,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   )}
                 >
                   <Icon className="size-5" strokeWidth={1.75} />
-                  <span className="sr-only">{item.label}</span>
+                  <span className="mt-0.5 max-w-[4.5rem] truncate text-[9px] tracking-kicker uppercase">{item.label}</span>
                 </Link>
               );
             })}
