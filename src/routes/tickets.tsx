@@ -98,6 +98,7 @@ function Tickets() {
                 {t.category} · {t.status} · {t.opener}
                 {t.assignee ? ` · assignee ${t.assignee}` : ""}
                 {t.created_at ? ` · ${t.created_at}` : ""}
+                {t.transcript_key ? ` · ${t.transcript_key}` : ""}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">

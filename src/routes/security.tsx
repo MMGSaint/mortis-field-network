@@ -71,9 +71,11 @@ function Security() {
         <p className="mt-3 text-[12px] text-muted">Least-privilege permission integer: {snap.data?.perms ?? "—"}</p>
       </section>
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => intake.mutate()} className="min-h-11 border border-line px-4 text-[12px] uppercase">
-          Simulate intake
-        </button>
+        {!snap.data?.live.connected && (
+          <button type="button" onClick={() => intake.mutate()} className="min-h-11 border border-line px-4 text-[12px] uppercase">
+            Simulate intake
+          </button>
+        )}
         <button type="button" onClick={() => lock.mutate()} className="min-h-11 border border-brass px-4 text-[12px] uppercase text-brass">
           LOCKDOWN
         </button>

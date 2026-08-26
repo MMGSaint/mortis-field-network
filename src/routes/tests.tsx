@@ -30,7 +30,7 @@ function Tests() {
         <p className="text-micro tracking-kicker text-brass uppercase">Scratch-guild harness</p>
         <h1 className="font-display text-3xl tracking-kicker">Tests</h1>
         <p className="mt-2 max-w-2xl text-pretty text-muted">
-          T1–T9 mandatory plus S1–S40 supplementary probes. A failing test is an engineering problem — never a reason to weaken the safety model.
+          T1–T9 mandatory plus S1–S53 supplementary probes. Walkthrough uses an isolated simulator and does not Apply the operator guild. A failing test is an engineering problem — never a reason to weaken the safety model.
         </p>
       </header>
       <div className="flex flex-wrap gap-2">

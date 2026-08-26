@@ -1217,6 +1217,23 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S52", "Ticket create 400 surfaces Discord body and does not open a ticket", false, e instanceof Error ? e.message : String(e));
   }
 
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const guest = rt.guild.seedMember("lock_guest", "newcomer", []);
+    await enactLockdown(rt.ctx(), "owner_1");
+    const notice = rt.store.blueprintState.get("arrival.notice")!;
+    const guide = rt.store.blueprintState.get("arrival.guide")!;
+    const intake = rt.store.blueprintState.get("arrival.intake")!;
+    const pass =
+      rt.guild.canView(guest.id, notice) &&
+      rt.guild.canView(guest.id, guide) &&
+      !rt.guild.canView(guest.id, intake);
+    push("S53", "Lockdown hides ENTRY and keeps HOW TO BEGIN readable", pass, `notice=${rt.guild.canView(guest.id, notice)} guide=${rt.guild.canView(guest.id, guide)} intake=${rt.guild.canView(guest.id, intake)}`);
+  } catch (e) {
+    push("S53", "Lockdown hides ENTRY and keeps HOW TO BEGIN readable", false, e instanceof Error ? e.message : String(e));
+  }
+
   void writeFileSync;
   void mkdtempSync;
   void rmSync;

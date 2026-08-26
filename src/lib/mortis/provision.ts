@@ -202,17 +202,15 @@ export function overwritesFor(
 }
 
 export async function closeArrival(bp: Blueprint, store: EnvoyStore, guild: SimulatedGuild): Promise<void> {
-  const notice = store.blueprintState.get("arrival.notice");
-  const terms = store.blueprintState.get("arrival.terms");
-  const intake = store.blueprintState.get("arrival.intake");
   const cat = store.blueprintState.get("arrival");
   const closed = overwritesFor(bp, store, guild, "public", "text", true, false);
-  // Keep notice readable; deny send already. Hide intake.
-  if (notice) await withBackoff(() => guild.patchChannel(notice, { permission_overwrites: closed }));
-  if (terms) await withBackoff(() => guild.patchChannel(terms, { permission_overwrites: closed }));
-  if (intake) {
-    const hidden = overwritesFor(bp, store, guild, "staff", "text", true, false);
-    await withBackoff(() => guild.patchChannel(intake, { permission_overwrites: hidden }));
+  const hidden = overwritesFor(bp, store, guild, "staff", "text", true, false);
+  for (const ch of bp.channels.filter((c) => c.category === "arrival")) {
+    const id = store.blueprintState.get(ch.key);
+    if (!id) continue;
+    // Keep NOTICE / TERMS / HOW TO BEGIN readable. Hide ENTRY so intake cannot start.
+    const ow = ch.key === "arrival.intake" ? hidden : closed;
+    await withBackoff(() => guild.patchChannel(id, { permission_overwrites: ow }));
   }
   if (cat) await withBackoff(() => guild.patchChannel(cat, { permission_overwrites: overwritesFor(bp, store, guild, "public", "category", true, false, false) }));
 }

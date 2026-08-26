@@ -118,16 +118,36 @@ function Dispatch() {
           mut.mutate();
         }}
       >
+        <h2 className="font-display text-lg tracking-kicker">Staff-auth probe</h2>
+        <p className="text-sm text-muted">Always posts DEPLOYMENT STATUS to NETWORK STATUS. Use this to prove the staff table, not to send player notices.</p>
         <label className="block text-[11px] tracking-[0.16em] uppercase text-muted">
-          Status / window / presentation name
+          Status field
           <input
             value={status}
             onChange={(e) => setStatus(e.target.value)}
             className="mt-1 block w-full min-h-11 border border-line bg-ink px-3 text-bone"
           />
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={asStaff} onChange={(e) => setAsStaff(e.target.checked)} />
+          Caller is on the staff table (uncheck to probe a Discord-role imposter)
+        </label>
+        <button type="submit" disabled={mut.isPending || !snap.data?.lastAppliedHash} className="min-h-11 border border-brass px-4 text-kicker tracking-kicker uppercase text-brass disabled:opacity-40">
+          {mut.isPending ? "Sending…" : "Send staff probe"}
+        </button>
+      </form>
+
+      <form
+        className="space-y-3 border border-line bg-surface p-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          notice.mutate();
+        }}
+      >
+        <h2 className="font-display text-lg tracking-kicker">Operational notice</h2>
+        <p className="text-sm text-muted">Goes through dispatch.send only. Kind selects channel and template.</p>
         <label className="block text-kicker tracking-kicker uppercase text-muted">
-          Operational kind (dispatch only)
+          Kind
           <select
             value={kind}
             onChange={(e) => setKind(e.target.value as OperationalNoticeKind)}
@@ -140,23 +160,21 @@ function Dispatch() {
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={asStaff} onChange={(e) => setAsStaff(e.target.checked)} />
-          Caller is on the staff table (uncheck to probe a Discord-role imposter)
+        <label className="block text-[11px] tracking-[0.16em] uppercase text-muted">
+          Status / window / presentation name
+          <input
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="mt-1 block w-full min-h-11 border border-line bg-ink px-3 text-bone"
+          />
         </label>
-        <div className="flex flex-wrap gap-2">
-          <button type="submit" disabled={mut.isPending || !snap.data?.lastAppliedHash} className="min-h-11 border border-brass px-4 text-kicker tracking-kicker uppercase text-brass disabled:opacity-40">
-            {mut.isPending ? "Sending…" : "Send staff probe (NETWORK STATUS / deployment)"}
-          </button>
-          <button
-            type="button"
-            disabled={notice.isPending || !snap.data?.lastAppliedHash}
-            onClick={() => notice.mutate()}
-            className="min-h-11 border border-line px-4 text-kicker tracking-kicker uppercase text-bone disabled:opacity-40"
-          >
-            {notice.isPending ? "Sending…" : "Send operational notice"}
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={notice.isPending || !snap.data?.lastAppliedHash}
+          className="min-h-11 border border-line px-4 text-kicker tracking-kicker uppercase text-bone disabled:opacity-40"
+        >
+          {notice.isPending ? "Sending…" : "Send operational notice"}
+        </button>
         {!snap.data?.lastAppliedHash && <p className="text-muted">Apply the blueprint before dispatching.</p>}
         {kind === "application_update" && (
           <p className="text-sm text-muted">Unsigned application updates are held at step 3. Attach a signed excerpt from the Registry before this kind can post.</p>
