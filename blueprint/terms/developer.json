@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "id": "mortis-developer-vocabulary",
+  "source": "Handoff Phase 1 §4 / §9 step 5. Context-aware Forge rule is encoded in the scanner, not as a blanket token ban.",
+  "terms": [
+    { "id": "phase-n", "pattern": "\\bphase\\s*[0-9]+\\b", "flags": "i", "mode": "block" },
+    { "id": "migration", "pattern": "\\bmigration\\b", "flags": "i", "mode": "block" },
+    { "id": "sprint", "pattern": "\\bsprint\\b", "flags": "i", "mode": "block" },
+    { "id": "canon-cleanup", "pattern": "canon\\s+(cleanup|tooling|database|export)", "flags": "i", "mode": "block" },
+    { "id": "ai-involvement", "pattern": "\\b(chatgpt|claude|llm|language model|grok build)\\b", "flags": "i", "mode": "block" },
+    { "id": "wrangler", "pattern": "\\bwrangler\\b", "flags": "i", "mode": "block" },
+    { "id": "cloudflare-worker", "pattern": "cloudflare\\s+workers?|\\bmortis-envoy\\b|\\bmortis-relay\\b", "flags": "i", "mode": "block" },
+    { "id": "d1-r2", "pattern": "\\b(D1|R2)\\s+(database|bucket)\\b", "flags": "i", "mode": "block" },
+    { "id": "staging", "pattern": "\\bstaging\\b", "flags": "i", "mode": "block" },
+    { "id": "proposal-json", "pattern": "\\bPROP_[0-9]{8}_", "flags": "", "mode": "block" },
+    { "id": "season-as-era", "pattern": "\\bseason\\s*[12]\\b|\\bseasons-as-era\\b", "flags": "i", "mode": "block", "note": "Production-era labels. Program-year Season 3 in published docs is a separate, owner-owned question — new copy still blocked via restricted list." },
+    { "id": "internal-codename", "pattern": "\\b(drydock|meridian|scaffold|topsail|ballast)\\b", "flags": "i", "mode": "block" },
+    { "id": "forge-dev-sense", "pattern": "forge\\s+(pipeline|build|sprint|ticket|deploy|worker|schema)", "flags": "i", "mode": "block", "note": "Dev-sense Forge has no pass path." }
+  ],
+  "forge_rule": {
+    "program_pass": ["Project Forge", "Forge"],
+    "program_pass_when": ["published_verbatim", "approved_program_template"],
+    "operational_notice": "warn_hold",
+    "dev_sense": "block"
+  }
+}

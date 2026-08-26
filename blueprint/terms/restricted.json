@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "id": "mortis-restricted-terms",
+  "source": "Handoff Phase 1 §4 never-list + identifier prefixes. Merge with packages/release-builder before production. Removals require owner approval.",
+  "terms": [
+    { "id": "ashwright", "pattern": "ashwright", "flags": "i", "mode": "block", "note": "Restricted identity. Never on player-facing surfaces. Never a Discord role." },
+    { "id": "true-name", "pattern": "true\\s*name", "flags": "i", "mode": "block" },
+    { "id": "saints-circle", "pattern": "saint'?s\\s+circle", "flags": "i", "mode": "block", "note": "DM-layer entity." },
+    { "id": "r-grade", "pattern": "\\br-?grades?\\b|\\brank\\s+ladder\\b|\\bR-[1-8]\\b", "flags": "i", "mode": "block", "note": "R-grade rank ladder remains restricted. No rank roles." },
+    { "id": "fact-id", "pattern": "\\bFACT-[A-Z0-9-]+", "flags": "", "mode": "block" },
+    { "id": "con-id", "pattern": "\\bCON-[A-Z0-9-]+", "flags": "", "mode": "block" },
+    { "id": "trg-id", "pattern": "\\bTRG-[A-Z0-9-]+", "flags": "", "mode": "block" },
+    { "id": "mine-id", "pattern": "\\bMINE-[A-Z0-9-]+", "flags": "", "mode": "block" },
+    { "id": "oq-id", "pattern": "\\bOQ-[A-Z0-9-]+", "flags": "", "mode": "block" },
+    { "id": "src-id", "pattern": "\\bSRC-[A-Z0-9-]+", "flags": "", "mode": "block" },
+    { "id": "bind-token", "pattern": "\\[BIND\\]", "flags": "", "mode": "block" },
+    { "id": "field-relay", "pattern": "field\\s+relay", "flags": "i", "mode": "block", "note": "Retired player-facing identity. MORTIS FIELD NETWORK is the anchor." },
+    { "id": "era-drydock", "pattern": "\\bdrydock\\b", "flags": "i", "mode": "block", "note": "Implementation-only era label. Never player-facing." },
+    { "id": "era-meridian", "pattern": "\\bmeridian\\b", "flags": "i", "mode": "block" },
+    { "id": "era-scaffold", "pattern": "\\bscaffold\\b", "flags": "i", "mode": "block" },
+    { "id": "era-topsail", "pattern": "\\btopsail\\b", "flags": "i", "mode": "block" },
+    { "id": "era-ballast", "pattern": "\\bballast\\b", "flags": "i", "mode": "block" },
+    { "id": "admin-secret", "pattern": "ADMIN_SECRET|RELEASE_TOKEN|DISCORD_BOT_TOKEN", "flags": "", "mode": "block" },
+    { "id": "season-3-new-copy", "pattern": "season\\s*3", "flags": "i", "mode": "block", "allow_in": ["published_verbatim"], "note": "Never in new player-facing copy. Verbatim only inside faithfully re-presented published Initiate documents." },
+    { "id": "stalker-new-copy", "pattern": "\\bstalkers?\\b", "flags": "i", "mode": "block", "allow_in": ["published_verbatim"], "note": "Published one-liner only, and only inside re-presented docs." }
+  ]
+}

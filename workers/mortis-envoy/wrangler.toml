@@ -1,0 +1,25 @@
+# mortis-envoy — NEW Worker, OWN D1, OWN R2. Does not share anything with mortis-relay.
+# Secrets via `wrangler secret put` ONLY. Never put tokens in [vars].
+
+name = "mortis-envoy"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+# [vars] stays empty of secrets.
+[vars]
+SERVICE = "mortis-envoy"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mortis-envoy"
+database_id = "REPLACE_AFTER_CREATE"
+
+[[r2_buckets]]
+binding = "TRANSCRIPTS"
+bucket_name = "mortis-envoy-transcripts"
+
+# Required secrets (wrangler secret put):
+#   DISCORD_BOT_TOKEN
+#   DISCORD_PUBLIC_KEY
+#   DISCORD_APP_ID
+#   CLI_SECRET

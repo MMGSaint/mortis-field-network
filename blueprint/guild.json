@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "blueprint_id": "mortis-field-network-phase1",
+  "identity": {
+    "player_facing_name": "MORTIS FIELD NETWORK",
+    "canon_ref": "MCA-OPS-PL-012"
+  },
+  "guild": {
+    "name": "MORTIS FIELD NETWORK",
+    "canon_ref": "MCA-OPS-PL-012",
+    "verification_level": 2,
+    "default_message_notifications": 1,
+    "explicit_content_filter": 2,
+    "preferred_locale": "en-US",
+    "system_channel_key": "arrival.notice",
+    "afk_channel_key": null,
+    "icon": null
+  },
+  "bot_permissions": {
+    "never_administrator": true,
+    "bits": [
+      "VIEW_CHANNEL",
+      "SEND_MESSAGES",
+      "EMBED_LINKS",
+      "READ_MESSAGE_HISTORY",
+      "MANAGE_CHANNELS",
+      "MANAGE_ROLES",
+      "MANAGE_WEBHOOKS",
+      "USE_APPLICATION_COMMANDS",
+      "MANAGE_THREADS",
+      "SEND_MESSAGES_IN_THREADS",
+      "CONNECT"
+    ]
+  },
+  "oauth_scopes": ["bot", "applications.commands"],
+  "roles": [
+    { "key": "role.owner", "display": "OWNER", "hoist": true, "mentionable": false, "color": 0, "tier": "staff", "position_group": "staff" },
+    { "key": "role.operations", "display": "OPERATIONS", "hoist": true, "mentionable": false, "color": 0, "tier": "staff", "position_group": "staff" },
+    { "key": "role.moderator", "display": "MODERATOR", "hoist": false, "mentionable": false, "color": 0, "tier": "staff", "position_group": "staff" },
+    { "key": "role.dm", "display": "DM", "hoist": false, "mentionable": false, "color": 0, "tier": "staff", "position_group": "staff" },
+    { "key": "role.developer", "display": "DEVELOPER", "hoist": false, "mentionable": false, "color": 0, "tier": "staff", "position_group": "staff" },
+    { "key": "role.tester", "display": "TESTER", "hoist": false, "mentionable": false, "color": 0, "tier": "staff", "position_group": "staff" },
+    { "key": "role.bot", "display": "BOT", "hoist": false, "mentionable": false, "color": 0, "tier": "bot", "position_group": "bot", "managed_by_discord": false },
+    { "key": "role.initiate", "display": "⟪INITIATE⟫", "hoist": true, "mentionable": false, "color": 0, "tier": "player", "position_group": "player", "canon_ref": "MIN-IAT-013" },
+    { "key": "role.shadow", "display": "⟪SHADOW⟫", "hoist": true, "mentionable": false, "color": 0, "tier": "player", "position_group": "player", "canon_ref": "MIN-IAT-013", "issuance": "phase4" }
+  ],
+  "categories": [
+    { "key": "arrival", "display": "ARRIVAL", "audience": "public", "show_locked": false, "position": 0, "neutral_fallback": true },
+    { "key": "network", "display": "NETWORK", "audience": "initiate+", "show_locked": true, "position": 1, "neutral_fallback": true },
+    { "key": "operations", "display": "OPERATIONS", "audience": "initiate+", "show_locked": true, "position": 2, "neutral_fallback": true },
+    { "key": "records", "display": "RECORDS", "audience": "initiate+", "show_locked": true, "position": 3, "canon_ref": "MIN-IAT-013" },
+    { "key": "rp", "display": "FIELD", "audience": "initiate+", "show_locked": true, "position": 4, "neutral_fallback": true },
+    { "key": "community", "display": "COMMUNITY", "audience": "initiate+", "show_locked": true, "position": 5, "neutral_fallback": true },
+    { "key": "support", "display": "SUPPORT", "audience": "initiate+", "show_locked": true, "position": 6, "neutral_fallback": true },
+    { "key": "staff", "display": "STAFF", "audience": "staff", "show_locked": false, "position": 7, "neutral_fallback": true }
+  ],
+  "channels": [
+    { "key": "arrival.notice", "category": "arrival", "kind": "text", "display": "NOTICE", "topic": "Read-only orientation. Current orders always outrank a static notice.", "audience": "public", "register": "dual", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.arrival.notice", "neutral_fallback": true },
+    { "key": "arrival.terms", "category": "arrival", "kind": "text", "display": "CONDUCT AND TERMS", "topic": "Plain-language conduct, consent, and terms. Accept before intake.", "audience": "public", "register": "dual", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.arrival.terms", "components": ["terms_accept"], "neutral_fallback": true },
+    { "key": "arrival.intake", "category": "arrival", "kind": "text", "display": "ENTRY", "topic": "Intake processing. Interaction only.", "audience": "public", "register": "dual", "readonly": true, "webhook": true, "slowmode": 5, "pin_template": "tpl.arrival.intake", "components": ["intake_start"], "neutral_fallback": true },
+    { "key": "arrival.guide", "category": "arrival", "kind": "text", "display": "HOW TO BEGIN", "topic": "First steps. Functional guidance only. Not a lore dump.", "audience": "public", "register": "dual", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.arrival.guide", "neutral_fallback": true },
+
+    { "key": "network.dispatches", "category": "network", "kind": "text", "display": "NOTICES", "topic": "Operational notices and briefings. Bot and staff only.", "audience": "initiate+", "register": "clear", "readonly": true, "webhook": true, "slowmode": 0, "neutral_fallback": true },
+    { "key": "network.status", "category": "network", "kind": "text", "display": "NETWORK STATUS", "topic": "Technical status. Bot posted.", "audience": "initiate+", "register": "clear", "readonly": true, "webhook": true, "slowmode": 0, "canon_ref": "MCA-OPS-PL-012" },
+    { "key": "network.traffic", "category": "network", "kind": "text", "display": "OPEN CHANNEL", "topic": "In-character traffic. Slowmode on.", "audience": "initiate+", "register": "ic", "readonly": false, "webhook": false, "slowmode": 5, "canon_ref": "MCA-OPS-PL-012" },
+    { "key": "network.queries", "category": "network", "kind": "text", "display": "QUESTIONS", "topic": "Out-of-character questions. Keep it clear.", "audience": "initiate+", "register": "clear", "readonly": false, "webhook": false, "slowmode": 5, "neutral_fallback": true },
+    { "key": "network.reference", "category": "network", "kind": "text", "display": "REFERENCE", "topic": "Player-safe functional answers. Not an archive of record.", "audience": "initiate+", "register": "clear", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.network.reference", "neutral_fallback": true },
+
+    { "key": "ops.board", "category": "operations", "kind": "text", "display": "MISSION ORDERS", "topic": "Current mission orders. Bot and staff; signup components as issued.", "audience": "initiate+", "register": "ic", "readonly": true, "webhook": true, "slowmode": 0, "canon_ref": "MCA-OPS-PL-012" },
+    { "key": "ops.reports", "category": "operations", "kind": "text", "display": "FIELD REPORTS", "topic": "In-character field reports. The system does not referee truth.", "audience": "initiate+", "register": "ic", "readonly": false, "webhook": false, "slowmode": 10, "canon_ref": "MCA-OPS-PL-012" },
+    { "key": "ops.incidents", "category": "operations", "kind": "text", "display": "INCIDENTS", "topic": "Granted visibility. Lifecycle machinery is not active.", "audience": "granted", "register": "ic", "readonly": false, "webhook": false, "slowmode": 5, "neutral_fallback": true },
+
+    { "key": "records.circulated", "category": "records", "kind": "text", "display": "RECORDS", "topic": "Published player-safe re-presentation only. Not an alternative publishing authority.", "audience": "initiate+", "register": "clear", "readonly": true, "webhook": true, "slowmode": 0, "attachments_restricted": true, "neutral_fallback": true },
+    { "key": "records.discussion", "category": "records", "kind": "text", "display": "DISCUSSION", "topic": "In-character analysis. The system never referees truth.", "audience": "initiate+", "register": "ic", "readonly": false, "webhook": false, "slowmode": 5, "attachments_restricted": true, "neutral_fallback": true },
+
+    { "key": "rp.commons.campus", "category": "rp", "kind": "text", "display": "OPEN CAMPUS", "topic": "Published Academy space. Name-level only.", "audience": "initiate+", "register": "ic", "readonly": false, "webhook": false, "slowmode": 5, "canon_ref": "MIN-IAT-013" },
+    { "key": "rp.commons.dining", "category": "rp", "kind": "text", "display": "DINING", "topic": "Published Academy space. Name-level only.", "audience": "initiate+", "register": "ic", "readonly": false, "webhook": false, "slowmode": 5, "canon_ref": "MIN-IAT-013" },
+    { "key": "voice.commons", "category": "rp", "kind": "voice", "display": "VOICE", "topic": "", "audience": "initiate+", "register": "voice", "readonly": false, "webhook": false, "slowmode": 0, "neutral_fallback": true },
+
+    { "key": "community.lounge", "category": "community", "kind": "text", "display": "LOUNGE", "topic": "Out of character. Be decent.", "audience": "initiate+", "register": "clear", "readonly": false, "webhook": false, "slowmode": 5, "neutral_fallback": true },
+    { "key": "community.media", "category": "community", "kind": "text", "display": "MEDIA", "topic": "Screenshots and clips. No restricted material.", "audience": "initiate+", "register": "clear", "readonly": false, "webhook": false, "slowmode": 5, "neutral_fallback": true },
+    { "key": "community.vrchat", "category": "community", "kind": "text", "display": "WORLD ACCESS", "topic": "World access information. Discord does not adjudicate what you witnessed.", "audience": "initiate+", "register": "clear", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.community.vrchat", "neutral_fallback": true },
+
+    { "key": "support.desk", "category": "support", "kind": "text", "display": "SUPPORT DESK", "topic": "Ask for help. Tickets are private.", "audience": "initiate+", "register": "dual", "readonly": true, "webhook": true, "slowmode": 0, "pin_template": "tpl.support.desk", "components": ["ticket_create"], "canon_ref": "MIN-IAT-013" },
+
+    { "key": "staff.ops", "category": "staff", "kind": "text", "display": "OPS", "topic": "Staff operations. Not a canon store.", "audience": "staff", "register": "staff", "readonly": false, "webhook": false, "slowmode": 0, "neutral_fallback": true },
+    { "key": "staff.dm", "category": "staff", "kind": "text", "display": "NOTES", "topic": "Not a canon store. World-content proposals go to the Drive inbox.", "audience": "staff", "register": "staff", "readonly": false, "webhook": false, "slowmode": 0, "pin_template": "tpl.staff.dm_pin", "neutral_fallback": true },
+    { "key": "staff.audit", "category": "staff", "kind": "text", "display": "AUDIT", "topic": "Bot audit mirror. Append-only in spirit.", "audience": "staff", "register": "staff", "readonly": true, "webhook": true, "slowmode": 0, "neutral_fallback": true },
+    { "key": "staff.inbox", "category": "staff", "kind": "text", "display": "INBOX", "topic": "Bot notifications.", "audience": "staff", "register": "staff", "readonly": true, "webhook": true, "slowmode": 0, "neutral_fallback": true },
+    { "key": "staff.sandbox", "category": "staff", "kind": "text", "display": "SANDBOX", "topic": "Staff experiments. Still not a player surface.", "audience": "staff", "register": "staff", "readonly": false, "webhook": false, "slowmode": 0, "neutral_fallback": true }
+  ],
+  "onboarding": {
+    "enabled": true,
+    "mode": "ONBOARDING_DEFAULT",
+    "default_channel_keys": ["arrival.notice", "arrival.terms", "arrival.intake", "arrival.guide"],
+    "manual_toggles": [
+      "Discord Safety Setup community enable (API-gated)",
+      "Server membership screening rules screen if not covered by onboarding prompts",
+      "Verified bot / privileged intent review is not required at launch (gateway, no privileged intents)"
+    ]
+  },
+  "automod": {
+    "mention_raid_protection": true,
+    "flag_suspicious_links": true,
+    "block_mention_spam": true
+  },
+  "slowmode_default_writable": 5,
+  "commands": [
+    { "name": "post", "description": "Post an approved notice through the dispatch path.", "staff_only": true },
+    { "name": "orient", "description": "How to begin on this network.", "staff_only": false },
+    { "name": "ticket", "description": "Open a private support ticket.", "staff_only": false },
+    { "name": "lockdown", "description": "Close arrival and pause invites.", "staff_only": true, "capability": "lockdown" }
+  ]
+}

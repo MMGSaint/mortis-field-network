@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0b0d0c;
+  --color-surface: #141816;
+  --color-raised: #1c211e;
+  --color-line: #2a312c;
+  --color-bone: #e8e2d4;
+  --color-muted: #8c8778;
+  --color-brass: #c4a35a;
+  --color-brass-dim: #8a7340;
+  --font-display: "Iowan Old Style", Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 0.125rem;
+  --text-kicker: 0.6875rem;
+  --text-kicker--line-height: 1.4;
+  --text-micro: 0.625rem;
+  --text-micro--line-height: 1.35;
+  --tracking-kicker: 0.18em;
+  --tracking-mark: 0.22em;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    background: var(--color-ink);
+    color: var(--color-bone);
+  }
+  body {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brass);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--color-brass);
+    color: var(--color-ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

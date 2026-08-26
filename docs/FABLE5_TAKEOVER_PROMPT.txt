@@ -1,0 +1,405 @@
+FABLE 5 ON MAX — MORTIS FIELD NETWORK TAKEOVER (ONE PROMPT, SELF-HEALING)
+
+You are Fable 5 on max. You are taking over an EXISTING Phase 1 Mortis Field Network Discord project. This is not a greenfield app.
+
+This single prompt is the entire operating contract. Do not ask for a second prompt to start work. Run PASS A immediately. Then keep running A→F on every turn so the owner does not waste prompts on diagnosis.
+
+============================================================
+0. HARD STOPS — NEVER VIOLATE
+============================================================
+
+DO NOT create a new project or rebuild Phase 1 from memory.
+DO NOT claim the project is missing if SOURCE/ or /workspace exists.
+DO NOT start Phase 3 (Operations Room) unless the owner explicitly names it after Phase 1 is green on scratch.
+DO NOT touch production Discord. Scratch guild only: 1540022458126700674
+DO NOT require Administrator in code or invite URL. Integer 294851834304.
+   Operator MAY leave Admin on the live bot if Discord is flaky. Your code MUST still work without it.
+DO NOT invent canon, ranks, lore, NPCs, factions, or composed display names. Neutral fallbacks or canon_ref/approved: only.
+DO NOT delete channels with history. Orphans are report-only. Archive-lock only with per-item confirm.
+DO NOT Save Discord Interactions Endpoint URL to nice-example.local or any App Builder public URL. Leave it BLANK.
+   Buttons ACK over the gateway (NO privileged intents: Presence / Server Members / Message Content all OFF).
+DO NOT persist the bot token to disk, git, chat, .env, wrangler [vars], screenshots, or zip files.
+DO NOT call mortis-relay. Frozen. Health check only if you deploy envoy later.
+DO NOT ingest Drive DM-admin PDFs / PROP_* / canon export into envoy.
+DO NOT weaken tests to make them pass (do not strip term lists, do not add Admin, do not allow history deletes).
+DO NOT post to player-facing blueprint channels from the ticket path.
+
+If a hard stop is about to be crossed: STOP and ask the owner. Do not improvise around it.
+
+============================================================
+1. FIND THE TREE (do this first, then never re-scaffold)
+============================================================
+
+Expected locations, in order:
+1. /workspace                    (Grok App Builder — THIS is the live tree if you are in that sandbox)
+2. SOURCE/ inside this zip       (backup / other workstation)
+
+Required layout:
+  src/lib/mortis/     runtime, provision, dispatch, envoy, tickets, intake,
+                      discord-rest, discord-gateway, discord-sim, permissions,
+                      blueprint, store, terms, crypto, events, health, notices,
+                      commands, walkthrough, zero-canon, server, test-suite
+  src/routes/         provision.tsx, tickets.tsx, dispatch.tsx, audit.tsx,
+                      tests.tsx, security.tsx, index.tsx, login.tsx
+                      api/interactions.ts, api/auth/$.ts
+  blueprint/          guild.json, templates.json, terms/{restricted,developer}.json
+  workers/mortis-envoy/
+  tools/mortis-provision/cli.mjs
+  tests/phase1/mandatory.test.ts
+  data/scratch-guild-state.json
+  docs/
+  artifacts/FABLE5_HANDOFF/   (this pack, if still in the App Builder tree)
+
+If the tree is missing: STOP. Output exactly:
+  SOURCE TREE MISSING. Do not scaffold a replacement.
+Do not invent a parallel Mortis app.
+
+If you ARE in App Builder /workspace: edit in place. Do not create a second project. Keep startup.sh serving the preview.
+
+============================================================
+2. LOAD-BEARING INVARIANTS (repeat in first status; keep forever)
+============================================================
+
+1. Discord is the least authoritative surface.
+   VRChat = witness. Registry/app = verify. Discord = hear.
+   Envoy stores ZERO canon (no facts, fragments, dossiers, reveal schedules, [BIND] names, unpublished material, signing private keys).
+
+2. Every player-facing post goes through dispatch.send (8 steps).
+   Staff dest skips 2–6, still does 1, 7, 8. A bypass is a critical defect.
+   Block, never redact, on restricted terms.
+
+3. No Auto-Reveal: NARRATIVE events stop at ELIGIBLE — AWAITING ENACTMENT.
+
+4. Provisioning is idempotent. Match by blueprint KEY, never by name.
+   History is never deleted. No-drift re-apply is a no-op.
+
+5. Backend auth is envoy staff table + Ed25519, never Discord role names.
+   A member holding a Discord role named OPERATIONS still fails /post unless they are in the staff table.
+
+Documented deviation (KEEP — do not reverse unless owner asks):
+  Architecture handoff wanted HTTP Interactions only.
+  App Builder URLs are not a stable Discord Interactions endpoint, so a gateway
+  with NO privileged intents was added for scratch. Leave Interactions URL blank.
+  docs/DISCORD_SETUP.md still says "gateway-less" in places — that doc is stale;
+  implementation + this prompt win. You MAY fix the doc (PASS E). Do not "fix"
+  the code back to HTTP-only.
+
+============================================================
+3. LAST-KNOWN STATE (packed 2026-08-25, Grok Build /workspace)
+============================================================
+
+Safe IDs (not secrets):
+- Scratch guild:     1540022458126700674
+- Application:       1540058003888410806
+- Public key:        9392679645356de7e144ccc7384ba5b5da65e08c09c3979f92d6fa59fbf072a0
+- Least-privilege:   294851834304
+- lastAppliedHash:   ca21f0cdbbde846ea2f556c44101a0bc269886abb24c626a43117bdbca10452f
+- Bindings:          data/scratch-guild-state.json — 51 keys from a prior live Apply
+
+Fresh process:
+- SimulatedGuild until attachLive.
+- Token lives in WeakMap only (runtime.ts liveTokens). After restart, operator must Connect again.
+- loadScratchState restores bindings + hash. That is NOT a reason to Apply.
+
+Tests last recorded (2026-08-20 ~23:19 UTC, re-verify on PASS A):
+  T1–T9 PASS · S1–S7 PASS · S8 channel PATCH 403 non-fatal PASS
+
+Live scratch (operator-confirmed 2026-08-20):
+  Community enabled. Structure applied (roles, categories, channels).
+  ARRIVAL Accept + Begin Intake buttons exist when gateway READY.
+  Intake completed at least once.
+  Web Tickets open/claim/close work.
+  Discord Open ticket (modal → POST channel) was the remaining flake (400/403).
+  Operator sometimes left Admin on because Discord 403'd without it.
+  Default Discord orphans remain (report-only):
+    Text Channels 1540022459032674405
+    Voice Channels 1540022459032674406
+    #general (text, HAS HISTORY) 1540022459032674407
+    General (voice) 1540022459032674408
+    managed bot role "Mortis Field Network — Dev" 1540061175230763022
+
+Production Mortis Discord: UNTOUCHED. Keep it that way.
+
+============================================================
+4. ARCHITECTURE MAP (edit these; do not reinvent)
+============================================================
+
+Singleton: src/lib/mortis/server.ts  globalThis.__mortisRuntime
+  MortisRuntime.load → bootstrapKeys → seedOwner/seedOperations
+  createServerFn + authMiddleware. Client never imports node:fs.
+
+Transport:
+  SimulatedGuild          src/lib/mortis/discord-sim.ts     tests + fresh process
+  DiscordRestGuild        src/lib/mortis/discord-rest.ts    after attachLive
+    hydrate, createChannel, patch, postMessage, pin, webhook fallback,
+    ensureBotChannelAccess, persistScratchState, listPins via REST GET /channels/{id}/pins
+    (there is NO guild.listPins — that was a live bug)
+
+Gateway:
+  startInteractionGateway src/lib/mortis/discord-gateway.ts
+    wss://gateway.discord.gg/?v=10  intents 0
+    INTERACTION_CREATE:
+      if custom_id is ticket_create or intake_start → ACK type 9 is returned by handle(),
+        so do NOT pre-ACK type 4/5 (modal openers MUST be type 9 immediately).
+      else ACK type 5 (deferred) then follow-up, OR let handle() return type 4.
+    reconnectGateway() if token still in WeakMap.
+
+Connect:
+  MortisRuntime.attachLive  src/lib/mortis/runtime.ts
+    confirmScratch required. hydrate. loadScratchState. start gateway.
+    ensureLiveChannelAccess() sweep of bound channels/categories.
+
+Dispatch (choke point):
+  dispatch.send / dispatchSend  src/lib/mortis/dispatch.ts
+  discordDeliver: bot POST, on 403 webhook with components if webhook exists.
+  mirrorAudit → staff.audit + staff.inbox.
+
+Interactions:
+  handleVerifiedInteraction / envoyFetch  src/lib/mortis/envoy.ts
+  ephemeral() type 4 flags 64, content ≤180
+  failReason(e) status + body snippet, never generic "Could not complete that action."
+  HTTP path: POST /interactions verifies Ed25519 BEFORE JSON.parse (401 on fail)
+  HTTP path is OPTIONAL. Gateway is the scratch path.
+
+custom_id table (do not rename without also updating pins):
+  terms_accept              button on arrival.terms        acceptTerms
+  intake_start              button on arrival.intake       MODAL type 9  custom_id intake_modal  field callsign
+  intake_modal              modal submit                   completeIntake → Initiate role
+  ticket_create             button on support.desk         MODAL type 9  custom_id ticket_modal
+  ticket_modal              modal submit                   createTicket  fields category, body
+  ticket_claim:{id}         ticket channel button          claimTicket
+  ticket_close:{id}         ticket channel button          closeTicket
+  ticket_reopen:{id}        ticket channel button          reopenTicket
+
+Tickets:
+  createTicket  src/lib/mortis/tickets.ts
+  name slug: ticket-{category}-{suffix} ≤100
+  parent: blueprint key "support" (SUPPORT category)
+  overwrites: everyone deny view + staff + bot + opener VIEW/SEND/HISTORY
+  live 400/403: PUT bot overwrite on parent → retry full → retry minimal → retry no parent
+  rate limit: 2 open per opener
+  categories: general | report | appeal | accessibility
+  report/appeal: OWNER+OPERATIONS only (ticket.report.read)
+  restricted opener text: hold for staff, do not post original
+  never post into a player-facing blueprint channel
+
+Intake:
+  acceptTerms / completeIntake  src/lib/mortis/intake.ts
+  LOCKDOWN → "Arrival is closed."
+
+Provision:
+  validate / plan / apply / adopt / refreshPins  src/lib/mortis/provision.ts
+  apply: 400/403 on PATCH guild or PATCH/POST channel is NON-FATAL (continue remaining creates)
+  orphans reported, never auto-deleted
+  refreshPins: listPins REST → edit components, else repost+pin
+  arrival.terms → terms_accept; arrival.intake → intake_start; support.desk → ticket_create
+
+Permissions:
+  PERM / botPermissionInteger / botInviteUrl  src/lib/mortis/permissions.ts
+  294851834304 = View, Send, Embed, History, Manage Channels, Manage Roles,
+  Manage Webhooks, Use App Commands, Manage Threads, Send in Threads, Connect
+  NEVER Administrator. NEVER Manage Server (LOCKDOWN invite-pause may fail; report it).
+
+Operator UI:
+  src/routes/provision.tsx   Connect / Validate / Plan / Apply / Refresh pins / Reconnect gateway
+  src/routes/tickets.tsx     web tickets (works even when Discord modal flakes)
+  src/routes/dispatch.tsx audit.tsx tests.tsx security.tsx
+
+Blueprint keys are identity. Channel Discord names are slugs (CONDUCT AND TERMS → #conduct-and-terms).
+
+============================================================
+5. SELF-HEALING PASS PROTOCOL — EVERY TURN, INCLUDING FIRST
+============================================================
+
+PASS A — RECON (read-only, mandatory)
+- Confirm tree. Confirm SimulatedGuild vs DiscordRestGuild (guild.live).
+- Confirm data/scratch-guild-state.json exists (51 bindings expected).
+- Run:
+    node --experimental-strip-types --disable-warning=ExperimentalWarning --test tests/phase1/mandatory.test.ts
+  or: npm test
+- Do NOT Apply. Do NOT call Discord unless the operator already connected in THIS process.
+- If App Builder: do not kill the preview server. startup.sh must keep :8080 up.
+
+PASS B — STATUS (always print this block)
+1. Found (path + live/sim + gateway lastEvent/lastError)
+2. Changed (paths) or "no code change"
+3. Tests (T/S ids)
+4. Operator clicks (exact)
+5. Remaining risk
+6. Optional improvement (and why it does not violate invariants)
+
+PASS C — FIX ONLY WHAT IS BROKEN
+One defect class per edit cluster.
+Rules for every Discord failure path:
+- Catch the error. Attach status + body snippet.
+- Ephemeral ≤180 chars via failReason(). NEVER only "Could not complete that action."
+- ACK ≤3s. Modal openers (ticket_create, intake_start) MUST return type 9 immediately.
+- Prefer channel member overwrite (type 1, bot user id) over Admin.
+- Audit + staff.inbox on ticket/intake failures (mirrorAudit).
+- Keep tests green. A failing test is not a reason to weaken safety.
+
+PASS D — HARDEN THE SAME PATH (do this in the same turn as C)
+While fixing, cover the next likely failure on THAT function. Catalog:
+
+  Symptom                              Fix in
+  -----------------------------------  ----------------------------------------------
+  400 invalid name/parent/overwrites   tickets.ts slug; drop bad overwrites; retry minimal; then parent=null
+  403 / 50001 Missing Access           ensureBotChannelAccess on channel + parent;
+                                       discordDeliver webhook fallback with components;
+                                       provision tolerate403; non-fatal continue
+  PATCH /guilds/{id} 400 or 403        provision.ts skip/tolerate; do not abort remaining creates
+  PATCH /channels/{id} 403             skip noop patches; non-fatal
+  POST /channels/{id}/messages 403     overwrite then webhook fallback
+  401 / gateway 4004                   surface lastError; NEVER invent Interactions URL
+  429                                  withBackoff already; keep it; do not tight-loop
+  Interaction timeout                  defer type 5 EXCEPT type-9 modal openers
+  Empty message content                default "(no details)"
+  Vite node:fs in client               keep fs in server modules / createServerFn only
+  Process restart                      require Connect; never persist token
+  Unknown custom_id                    ephemeral "Unknown control."
+  Bad ticket category                  ephemeral list general|report|appeal|accessibility
+  Unbound channel_key                  dispatch step 6 fail + inbox
+  Lockdown during intake               "Arrival is closed."
+  Staff /post by non-staff             "not authorized to post" (do not leak staff table)
+  guild.listPins is not a function     REST GET /channels/{id}/pins only
+  Plan wants deletes                   STOP. Report. Do not Apply.
+  Production guild id appears          STOP.
+  Placeholder Interactions URL         Provision warning; tell operator to clear it
+  Role hierarchy                       bot role must sit above Initiate/Shadow it positions;
+                                       cannot move roles at or above itself — report, don't Admin
+  Ticket snowflake = demo handle       live createTicket needs real member snowflake;
+                                       web Tickets on workstation may use seeded owner_1 in sim only
+
+PASS E — IMPROVE (allowed after A–D green; do not wait for a new prompt)
+You MAY make your own better version of the SAME Phase 1 system.
+Stay inside Phase 1 unless the owner names a later phase.
+
+Allowed now (do these without asking):
+- Ticket create reliability (payload, parent overwrite, slug, Discord body in ephemeral)
+- Gateway reconnect UX, lastError copy, READY detection
+- Pin refresh idempotency + JSON results in Provision
+- Audit/inbox completeness
+- Tests for live-REST mocks (403/400 retries) without hitting Discord
+- Docs that match the gateway deviation (DISCORD_SETUP.md is stale in §1/§6)
+- Least-privilege overwrite coverage
+- Rate-limit / backoff polish
+- Operator checklists / clearer Provision errors / plan diffs
+- /orient (Phase 1.5 polish, still not Phase 3)
+- Notification preferences, transcript HTML, report-only drift cron
+- Structured OPERATIONAL templates through dispatch.send only
+- Webhook rotation via provisioner
+- Retract-message operator flow polish
+
+NOT now unless owner names it:
+- Phase 3 Operations Room
+- Phase 4 Shadow issuance / incident lifecycle
+- Narrative event engine / Auto-Reveal machinery
+- Privileged intents
+- Identity linking / VRChat seam
+- Canon ingest
+- Production guild Apply
+- Changing 294851834304 to include Administrator or Manage Server
+
+When you improve:
+- Keep dispatch.send as the only player-facing post path
+- Keep blueprint keys stable
+- Additive schema only
+- Do not rename live channels in a way that recreates them
+- Prefer the approach that does not need Admin and does not delete history
+
+PASS F — STOP CONDITIONS (ask the owner)
+- Plan wants deletes
+- Production guild id appears
+- You would need to invent player-facing copy
+- You would need Administrator as a code requirement
+- You would start Phase 3
+- You would ingest Drive / canon into envoy
+- Two approaches both work but one deletes history — pick the other, don't ask
+- You are about to persist a token — don't. Stop if something forces it.
+
+============================================================
+6. OPERATOR CLICK PATH (tell them every turn; never Apply blindly)
+============================================================
+
+1. Discord Developer Portal → Application 1540058003888410806
+   Interactions Endpoint URL = EMPTY. Do not Save the example.
+   Privileged intents OFF. Public Bot OFF.
+2. Provision → paste guild 1540022458126700674 + app id + public key + token
+   Tick "This is a blank scratch guild…" → Connect
+3. Wait until UI says gateway connected / READY (not "connecting…")
+4. Validate → Plan
+5. If Plan is noops + ~5 orphans: do NOT Apply unless they want archive-lock
+6. If pins lack buttons: Refresh ARRIVAL pins. Expect JSON results[].ok
+7. Retest in Discord:
+   #conduct-and-terms → Accept
+   #entry → Begin Intake → callsign
+   #support-desk → Open ticket → category MUST be one of: general | report | appeal | accessibility
+8. Confirm #audit and #inbox lines
+9. Web Tickets on the workstation must still open/claim/close (do not break them)
+
+If buttons time out: gateway is not READY, or Interactions URL is stealing ACKs.
+Tell them to clear the URL and press Reconnect gateway (token still in memory) or Connect again.
+
+============================================================
+7. TEST CONTRACT
+============================================================
+
+  npm test
+  node --experimental-strip-types --disable-warning=ExperimentalWarning --test tests/phase1/mandatory.test.ts
+
+Mandatory T1–T9 (must stay green):
+  T1 Blank guild provisioning
+  T2 Idempotent apply
+  T3 Orphan / RP-history protection
+  T4 Permission isolation
+  T5 Restricted visibility rejection
+  T6 Forged signature rejection
+  T7 Dispatch bypass / role-imposter
+  T8 Zero authoritative canon reachable
+  T9 Audit logging
+
+Supplementary S1–S8:
+  S1 Intake idempotency
+  S2 Register mismatch
+  S3 NARRATIVE-without-ENACTED
+  S4 Term-list unity (validate + dispatch share lists)
+  S5 Bot perms / never Admin
+  S6 429 backoff
+  S7 Report-ticket privacy
+  S8 Channel PATCH 403 non-fatal
+
+If you add a live-REST mock test for ticket 400/403 retry, that is PASS E. Keep it off the network.
+
+App Builder also: npm run typecheck  and do not break the preview (startup.sh, 0.0.0.0:8080).
+
+============================================================
+8. SECRETS AND IDS
+============================================================
+
+NEVER write to disk / git / chat / zip:
+  Bot token (was pasted in chat historically — treat as compromised; operator should rotate
+  if this pack left the trusted circle. Do not copy it into any file you create.)
+
+Safe to mention:
+  Guild 1540022458126700674
+  App 1540058003888410806
+  Public key (verify-only)
+  Permission integer 294851834304
+  lastAppliedHash
+
+Invite URL shape:
+  https://discord.com/oauth2/authorize?client_id=1540058003888410806&permissions=294851834304&scope=bot%20applications.commands
+
+============================================================
+9. FIRST ACTION — BEGIN NOW
+============================================================
+
+1. PASS A. Run the tests. Read runtime.ts, envoy.ts, tickets.ts, discord-gateway.ts, discord-rest.ts, provision.ts enough to confirm the maps above still match the files (if they drifted, trust the files and update your status).
+2. If tests are green and you are in a live App Builder session with no operator Connect: do PASS E on the highest-value reliability gap you can PROVE in tests (prefer: Discord Open ticket 400/403 mock + gateway ACK type-9 + failReason coverage). Then stop and give the operator the click path. Do not Apply.
+3. If tests fail: PASS C+D on the failing test only. Re-run. Do not expand scope.
+4. If the operator is already connected in this process and reports a live error: fix THAT error using the catalog, surface the Discord body, harden the sibling failure, retest.
+5. Output the PASS B block. Never claim live Discord is connected if SimulatedGuild is still the transport. Never paste tokens.
+
+Hope for the best: Phase 1 holds, Plan is no-op, buttons ACK, tickets create under SUPPORT.
+Prepare for the worst: 400/403/50001/timeout/placeholder URL/process restart/role hierarchy/orphan pressure.
+You already have the playbook. Use it. Do not wait for another prompt.
