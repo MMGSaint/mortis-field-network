@@ -1,3 +1,8 @@
+CANONICAL SOURCE (2026-08-26): https://github.com/MMGSaint/mortis-field-network
+Clone that repository. Read docs/AGENT_HANDOFF.md. Do not rebuild from this zip or from /workspace memory.
+Least-privilege invite integer is 295011699728 (locked in src/lib/mortis/permissions.ts, test S41).
+An earlier published integer 294851834304 was a transcription error: it omitted View Channel, Send Messages, Manage Channels, Manage Roles, and Connect. Do not invite with it. Do not add Administrator.
+
 FABLE 5 ON MAX — MORTIS FIELD NETWORK TAKEOVER (ONE PROMPT, SELF-HEALING)
 
 You are Fable 5 on max. You are taking over an EXISTING Phase 1 Mortis Field Network Discord project. This is not a greenfield app.
@@ -12,7 +17,7 @@ DO NOT create a new project or rebuild Phase 1 from memory.
 DO NOT claim the project is missing if SOURCE/ or /workspace exists.
 DO NOT start Phase 3 (Operations Room) unless the owner explicitly names it after Phase 1 is green on scratch.
 DO NOT touch production Discord. Scratch guild only: 1540022458126700674
-DO NOT require Administrator in code or invite URL. Integer 294851834304.
+DO NOT require Administrator in code or invite URL. Integer 295011699728.
    Operator MAY leave Admin on the live bot if Discord is flaky. Your code MUST still work without it.
 DO NOT invent canon, ranks, lore, NPCs, factions, or composed display names. Neutral fallbacks or canon_ref/approved: only.
 DO NOT delete channels with history. Orphans are report-only. Archive-lock only with per-item confirm.
@@ -31,8 +36,9 @@ If a hard stop is about to be crossed: STOP and ask the owner. Do not improvise 
 ============================================================
 
 Expected locations, in order:
-1. /workspace                    (Grok App Builder — THIS is the live tree if you are in that sandbox)
-2. SOURCE/ inside this zip       (backup / other workstation)
+1. git clone https://github.com/MMGSaint/mortis-field-network.git  (CANONICAL)
+2. /workspace                    (Grok App Builder working copy of that repo)
+3. SOURCE/ inside a zip          (stale backup — prefer GitHub)
 
 Required layout:
   src/lib/mortis/     runtime, provision, dispatch, envoy, tickets, intake,
@@ -50,8 +56,10 @@ Required layout:
   docs/
   artifacts/FABLE5_HANDOFF/   (this pack, if still in the App Builder tree)
 
-If the tree is missing: STOP. Output exactly:
-  SOURCE TREE MISSING. Do not scaffold a replacement.
+If GitHub clone works, that tree is canonical. If you are in Grok App Builder and /workspace exists, use it as a working copy of that repo.
+
+If GitHub is unreachable AND /workspace is missing AND SOURCE/ is missing: STOP. Output exactly:
+  SOURCE TREE MISSING. Clone https://github.com/MMGSaint/mortis-field-network. Do not scaffold a replacement.
 Do not invent a parallel Mortis app.
 
 If you ARE in App Builder /workspace: edit in place. Do not create a second project. Keep startup.sh serving the preview.
@@ -92,7 +100,7 @@ Safe IDs (not secrets):
 - Scratch guild:     1540022458126700674
 - Application:       1540058003888410806
 - Public key:        9392679645356de7e144ccc7384ba5b5da65e08c09c3979f92d6fa59fbf072a0
-- Least-privilege:   294851834304
+- Least-privilege:   295011699728
 - lastAppliedHash:   ca21f0cdbbde846ea2f556c44101a0bc269886abb24c626a43117bdbca10452f
 - Bindings:          data/scratch-guild-state.json — 51 keys from a prior live Apply
 
@@ -196,7 +204,7 @@ Provision:
 
 Permissions:
   PERM / botPermissionInteger / botInviteUrl  src/lib/mortis/permissions.ts
-  294851834304 = View, Send, Embed, History, Manage Channels, Manage Roles,
+  295011699728 = View, Send, Embed, History, Manage Channels, Manage Roles,
   Manage Webhooks, Use App Commands, Manage Threads, Send in Threads, Connect
   NEVER Administrator. NEVER Manage Server (LOCKDOWN invite-pause may fail; report it).
 
@@ -298,7 +306,7 @@ NOT now unless owner names it:
 - Identity linking / VRChat seam
 - Canon ingest
 - Production guild Apply
-- Changing 294851834304 to include Administrator or Manage Server
+- Changing 295011699728 to include Administrator or Manage Server
 
 When you improve:
 - Keep dispatch.send as the only player-facing post path
@@ -384,11 +392,11 @@ Safe to mention:
   Guild 1540022458126700674
   App 1540058003888410806
   Public key (verify-only)
-  Permission integer 294851834304
+  Permission integer 295011699728
   lastAppliedHash
 
 Invite URL shape:
-  https://discord.com/oauth2/authorize?client_id=1540058003888410806&permissions=294851834304&scope=bot%20applications.commands
+  https://discord.com/oauth2/authorize?client_id=1540058003888410806&permissions=295011699728&scope=bot%20applications.commands
 
 ============================================================
 9. FIRST ACTION — BEGIN NOW

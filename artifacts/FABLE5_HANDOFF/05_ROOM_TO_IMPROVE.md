@@ -1,3 +1,5 @@
+> **ERRATA (2026-08-26):** Canonical repo is https://github.com/MMGSaint/mortis-field-network. Least-privilege integer is `295011699728`, not `294851834304` (transcription error). Leave Interactions Endpoint URL blank while using the workstation gateway.
+
 # ROOM TO IMPROVE — Fable 5 may evolve this
 
 The one prompt allows a **better version** of the same Phase 1 system. That is intentional. Do not freeze bugs. Do freeze invariants.

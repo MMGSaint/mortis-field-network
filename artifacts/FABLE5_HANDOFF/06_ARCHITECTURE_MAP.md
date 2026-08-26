@@ -1,3 +1,5 @@
+> **Canonical source:** https://github.com/MMGSaint/mortis-field-network — least-privilege integer `295011699728`. The previously published `294851834304` was a transcription error.
+
 # ARCHITECTURE MAP
 
 Trust the files if this map drifts. Update this file when you change a path.
@@ -33,7 +35,7 @@ Token: `WeakMap<MortisRuntime, string>` in `runtime.ts`. Gone on GC / process re
 | `tickets.ts` | create/claim/close/reopen + 400/403 retry |
 | `intake.ts` | terms + complete + Initiate bind |
 | `provision.ts` | validate/plan/apply/adopt/refreshPins; 400/403 non-fatal |
-| `permissions.ts` | PERM bits, 294851834304, overwrite generators |
+| `permissions.ts` | PERM bits, 295011699728, overwrite generators |
 | `blueprint.ts` | load `blueprint/guild.json` + templates + hash |
 | `store.ts` | members, staff, tickets, audit, blueprintState, lockdown |
 | `terms.ts` | restricted + developer lists, block-not-redact |

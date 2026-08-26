@@ -1,3 +1,5 @@
+> **ERRATA (2026-08-26):** Canonical repo is https://github.com/MMGSaint/mortis-field-network. Least-privilege integer is `295011699728`, not `294851834304` (transcription error). Leave Interactions Endpoint URL blank while using the workstation gateway.
+
 # SESSION STATUS — packed 2026-08-25
 
 Handoff agent: Grok Build in App Builder `/workspace`. No git history. Last mortis source writes 2026-08-20 23:14–23:19 UTC plus docs/player-experience plan 2026-08-25.

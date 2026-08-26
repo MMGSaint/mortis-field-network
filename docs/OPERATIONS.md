@@ -7,14 +7,14 @@ One-person operator runbook. Discord is not canon authority.
 ```
 npm install
 npm run typecheck
-node --experimental-strip-types --disable-warning=ExperimentalWarning --test tests/phase1/mandatory.test.ts
+npm run test:engine
 ```
 
 In Grok Build the preview starts via `startup.sh`.
 
 ## Tests
 
-Engine: `npm run test:engine` (T1–T9, S1–S46).  
+Engine: `npm run test:engine` (T1–T9, S1–S53).  
 Workstation Tests page also runs the suite and the first-player walkthrough (isolated runtime — it does not Apply the operator guild).
 
 ## Provisioning

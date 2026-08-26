@@ -39,7 +39,7 @@ Do not create a `.env` in this sandbox. Tokens never go in git, Drive, or chat.
 
 ```
 npm run typecheck
-npm run test
+npm run test:engine
 npm run build
 ```
 

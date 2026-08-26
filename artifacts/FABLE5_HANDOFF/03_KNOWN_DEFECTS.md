@@ -1,3 +1,5 @@
+> **ERRATA (2026-08-26):** Canonical repo is https://github.com/MMGSaint/mortis-field-network. Least-privilege integer is `295011699728`, not `294851834304` (transcription error). Leave Interactions Endpoint URL blank while using the workstation gateway.
+
 # KNOWN DEFECTS AND FIX MAP
 
 Do not widen Admin. Do not start Phase 3. File paths are under `src/lib/mortis/` unless noted.

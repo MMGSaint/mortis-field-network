@@ -1,3 +1,5 @@
+> **ERRATA (2026-08-26):** Implementation lives at https://github.com/MMGSaint/mortis-field-network. Least-privilege integer is `295011699728`. Leave Interactions Endpoint URL blank. Do not rebuild from this document.
+
 # MORTIS — GROK BUILD HANDOFF · PHASE 1
 **Date:** 2026-08-20 · **Status:** ARCHITECTURE FROZEN — APPROVED FOR IMPLEMENTATION
 **Audience:** Grok Build (implementation agent). This package is authoritative for Phase 1. It contains no code by design; it tells you exactly what to build, what to read, what to preserve, and what to never do.

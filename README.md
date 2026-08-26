@@ -29,7 +29,7 @@ It stores **no canon**. It does **not** Auto-Reveal narrative. It does **not** r
 | Tickets / intake | `src/lib/mortis/tickets.ts`, `intake.ts` |
 | Health | `src/lib/mortis/health.ts` |
 | Blueprint | `blueprint/guild.json`, `blueprint/templates.json` |
-| Tests T1–T9 + S1–S40 | `src/lib/mortis/test-suite.ts` |
+| Tests T1–T9 + S1–S53 | `src/lib/mortis/test-suite.ts` |
 | Operator UI | `src/routes/*` |
 | Optional Worker | `workers/mortis-envoy/` |
 
@@ -42,19 +42,16 @@ This app is a TanStack Start / Vite workstation. In Grok Build it serves the liv
 ```
 npm install
 npm run typecheck
-npm run test
+npm run test:engine
 npm run build
 ```
 
-Mortis engine only (skip platform PWA tests):
-
-```
-npm run test:engine
-```
+`npm test` also runs App Builder PWA injector tests. Those may fail on the product title `MORTIS FIELD NETWORK`. Use `test:engine` for Mortis.
 
 Clone URL: https://github.com/MMGSaint/mortis-field-network
 
-Read [docs/AGENT_HANDOFF.md](docs/AGENT_HANDOFF.md) next. Then [docs/OPERATIONS.md](docs/OPERATIONS.md) and [docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md).
+Start here: [docs/AGENT_HANDOFF.md](docs/AGENT_HANDOFF.md) · [docs/FABLE.md](docs/FABLE.md) · [docs/OPERATIONS.md](docs/OPERATIONS.md) · [docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md) · [docs/CHANGELOG.md](docs/CHANGELOG.md)
+
 
 ## Simulator vs live Discord
 

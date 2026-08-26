@@ -1,3 +1,5 @@
+> **Canonical source:** https://github.com/MMGSaint/mortis-field-network — least-privilege integer `295011699728`. The previously published `294851834304` was a transcription error.
+
 # INVARIANTS AND HARD STOPS
 
 ## Identity
@@ -36,7 +38,7 @@ Match by blueprint key. No-drift re-apply is a no-op. Orphans reported. History 
 
 ## Permissions
 
-Least privilege integer `294851834304`. `blueprint/guild.json` `never_administrator: true`. Channel member overwrite (type 1, bot user id) over guild-wide Admin.
+Least privilege integer `295011699728`. `blueprint/guild.json` `never_administrator: true`. Channel member overwrite (type 1, bot user id) over guild-wide Admin.
 
 ## Interactions
 

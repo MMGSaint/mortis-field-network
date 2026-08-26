@@ -1,3 +1,5 @@
+> **Canonical source:** https://github.com/MMGSaint/mortis-field-network — least-privilege integer `295011699728`. The previously published `294851834304` was a transcription error.
+
 # MORTIS → FABLE 5 TAKEOVER
 **Packed:** 2026-08-25 · **From:** Grok Build `/workspace` (tree present)
 
@@ -27,7 +29,7 @@ Safe IDs:
 
 - Scratch guild: `1540022458126700674`
 - Application: `1540058003888410806`
-- Least-privilege integer: `294851834304`
+- Least-privilege integer: `295011699728`
 - Last apply hash: `ca21f0cdbbde846ea2f556c44101a0bc269886abb24c626a43117bdbca10452f`
 
 ## First commands after unpack (other workstation)

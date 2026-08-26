@@ -8,7 +8,7 @@ This describes the code in this repository, not a future design.
 - **MortisRuntime** — process singleton. Owns blueprint, store, guild transport, gateway handle, kill flag (liftable).
 - **SimulatedGuild** — default transport for tests and preview without a token.
 - **DiscordRestGuild** — live REST; created on Connect. Token lives in a WeakMap, not on disk.
-- **Gateway** — Discord Gateway v10 for `INTERACTION_CREATE`. ACK within 3s (type 4 or deferred type 5). Type 9 for modals.
+- **Gateway** — Discord Gateway v10 for `INTERACTION_CREATE`. Intents `0`. ACK within 3s (type 4 or deferred type 5). Type 9 for modals. Invalid session (op 9) reconnects.
 
 ## Provisioning
 
