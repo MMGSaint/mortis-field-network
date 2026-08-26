@@ -12,6 +12,7 @@ Phase 1 Field Network engine + Phase 2 player-safe UX are implemented in this tr
 - Transport default: simulator. Live REST (`DiscordRestGuild`) + gateway exist; attach only after operator Connect.
 - Scratch guild `1540022458126700674` was applied 2026-08-20. Bindings in `data/scratch-guild-state.json` (snowflakes only; no tokens).
 - Last recorded engine tests: T1–T9 + S1–S46 PASS (simulator).
+- Latest completion report: `docs/MORTIS_AUTONOMOUS_COMPLETION_REPORT.md`.
 - Production Discord: **untouched**.
 - Phase 3 Operations Room: **not opened**.
 
