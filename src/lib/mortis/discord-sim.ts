@@ -206,6 +206,14 @@ export class SimulatedGuild {
     });
   }
 
+  async deleteWebhook(webhookId: string): Promise<void> {
+    return this.gated("DELETE", `/webhooks/${webhookId}`, () => {
+      for (const ch of this.channels) {
+        if (ch.webhook?.id === webhookId) ch.webhook = undefined;
+      }
+    });
+  }
+
   async postMessage(channelId: string, content: string, authorId = this.botUserId, components?: unknown[]): Promise<SimMessage> {
     return this.gated("POST", `/channels/${channelId}/messages`, () => {
       const ch = this.channelById(channelId);

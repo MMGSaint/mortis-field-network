@@ -328,9 +328,13 @@ export async function createTicket(
       actor: opts.opener,
       action: "ticket.create",
       target: id,
-      outcome: "ok",
-      details: { channel: ch.id, post_warn: e.message },
+      outcome: "fail",
+      details: { channel: ch.id, post_warn: e.message, body: e.body },
     });
+    throw Object.assign(
+      new Error(`ticket opened; controls failed: ${e.message}${e.body && !e.message.includes(e.body) ? ` ${e.body}` : ""}`.slice(0, 400)),
+      { status: e.status, body: e.body },
+    );
   }
   if (restricted.blocked) {
     await staffTicketNotice(ctx, {

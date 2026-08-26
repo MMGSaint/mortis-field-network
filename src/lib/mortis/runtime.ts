@@ -247,8 +247,17 @@ export class MortisRuntime {
       if (!ch.webhook) continue;
       const id = this.store.blueprintState.get(ch.key);
       if (!id) continue;
+      const live = this.guild.channelById(id);
+      const previous = live?.webhook;
       const wh = await this.guild.createWebhook(id, "MORTIS FIELD NETWORK");
       this.store.webhookUrls.set(ch.key, wh.url);
+      if (previous?.id && previous.id !== wh.id && typeof this.guild.deleteWebhook === "function") {
+        try {
+          await this.guild.deleteWebhook(previous.id);
+        } catch {
+          /* old webhook delete is best-effort; new URL is bound */
+        }
+      }
       rotated.push(ch.key);
     }
     this.store.appendAudit({

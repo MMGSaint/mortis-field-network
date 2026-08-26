@@ -89,7 +89,8 @@ Token: **not in this repo**. Rotate if it was ever pasted in chat.
 - Intake grants Initiate **before** marking complete; already-complete retries the grant.
 - Pin list accepts Discord `{ items: [...] }` envelope. Channel overwrite includes `PIN_MESSAGES` (not the invite integer).
 - Transcript HTML actually escapes (S35). Health reports missing parent as placement drift (S46).
-- Dispatch step 7 surfaces Discord `body` on failure.
+- Webhook rotation deletes the previous channel webhook after binding the new URL.
+- Ticket channel-control post failures no longer report a clean success; the opener sees `ticket opened; controls failed` plus the Discord body.
 - Operator UX: Plan-before-Apply, scratch ids prefilled, gateway/Admin next-action, mobile nav labels.
 
 ## Deferred player-experience

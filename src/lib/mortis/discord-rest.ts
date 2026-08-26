@@ -117,6 +117,7 @@ export function attachCurrentRestMethods(guild: SimulatedGuild): void {
     "putGuildCommands",
     "createChannel",
     "createWebhook",
+    "deleteWebhook",
     "addRole",
     "createRole",
   ]) {
@@ -385,6 +386,13 @@ export class DiscordRestGuild extends SimulatedGuild {
     const ch = this.channelById(channelId);
     if (ch) ch.webhook = { id, url, token };
     return { id, url, token };
+  }
+
+  async deleteWebhook(webhookId: string): Promise<void> {
+    await this.api("DELETE", `/webhooks/${webhookId}`);
+    for (const ch of this.channels) {
+      if (ch.webhook?.id === webhookId) ch.webhook = undefined;
+    }
   }
 
   async postMessage(channelId: string, content: string, authorId = this.botUserId, components?: unknown[]): Promise<SimChannel["messages"][number]> {
