@@ -54,6 +54,8 @@ https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&permissions=295011
 
 Invite **only** to the scratch guild.
 
+Developer Portal **default install** (`install_params`) is independent of a guild re-authorize. A public RPC probe on 2026-08-27 showed default integer `7347005485008037` (missing Send Messages, Manage Channels, Manage Roles, and others) and Public Bot **on**. Always use the workstation invite URL (`295011699728`). Turn Public Bot off. Do not add Administrator.
+
 After invite: in the scratch guild, drag the bot's integration role **above** the presentation roles it must position (staff above bot above Initiate). The bot cannot move roles at or above itself.
 
 ## 3. Scratch guild

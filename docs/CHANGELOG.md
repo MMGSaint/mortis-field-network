@@ -2,6 +2,21 @@
 
 Engineering log for https://github.com/MMGSaint/mortis-field-network. Simulator-proven unless marked live.
 
+## 2026-08-27 — live scratch integration (tokenless path)
+
+- Token is still not in this environment (never env/git/Drive/chat). Re-authorizing the bot in Discord does not put the token in process memory. Connect remains the Provision password field.
+- Tokenless live probe of Discord public application RPC (`1540058003888410806`):
+  - Default `install_params.permissions` is `7347005485008037`, **not** canonical `295011699728`.
+  - Missing from that default: Send Messages, Manage Channels, Manage Roles, Read Message History, Manage Webhooks, Use Application Commands, Manage Threads, Send Messages in Threads.
+  - Excess includes Manage Server and Ban Members. Administrator is **not** in the default.
+  - Public Bot is **on**.
+  - Guild re-authorize with `295011699728` is independent of Developer Portal default install. Do not reinvite unless Connect proves guild-held bits are still wrong.
+- Discord REST from this environment: `/gateway` 200, `/applications/{id}/rpc` 200, `/users/@me` without token 401 (not an IP block). Widget previously 429 “being blocked”.
+- Blueprint hash `4823dcdb…` differs from last live apply `ca21f0cd…`. Plan before Apply after Connect.
+- Added `probe-app` / Provision **Probe public application**. Never sends a bot token.
+- Live REST 429 with “being blocked” fails closed and surfaces the Discord body instead of spinning 1s retries (S55, S58).
+- Tests S54–S58.
+
 ## 2026-08-26 — pre-Fable hardening
 
 - Canonical least-privilege invite integer locked at `295011699728` (S41). Health HOLDs on Administrator and on the transcribed-wrong integer (S42).

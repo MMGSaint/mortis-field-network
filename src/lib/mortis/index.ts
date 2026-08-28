@@ -6,6 +6,7 @@ export * from "./blueprint.ts";
 export * from "./store.ts";
 export * from "./discord-sim.ts";
 export * from "./discord-rest.ts";
+export * from "./discord-public.ts";
 export * from "./dispatch.ts";
 export * from "./provision.ts";
 export * from "./intake.ts";

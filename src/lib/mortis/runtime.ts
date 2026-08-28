@@ -10,6 +10,7 @@ import { SimulatedGuild } from "./discord-sim.ts";
 import { DiscordRestGuild, loadScratchState, ensureBotChannelAccess, type LiveIdentity } from "./discord-rest.ts";
 import { startInteractionGateway, type GatewayStatus } from "./discord-gateway.ts";
 import { botInviteUrl, botPermissionInteger, permissionExcess } from "./permissions.ts";
+import { assessLiveReadiness, type LiveReadiness } from "./discord-public.ts";
 import { generateEd25519HexPair, signEd25519Hex } from "./crypto.ts";
 import { STAFF_CAPS_ALL, type Blueprint, type DispatchCaller } from "./types.ts";
 import { assessHealth, type HealthReport } from "./health.ts";
@@ -400,6 +401,48 @@ export class MortisRuntime {
 
   async notice(kind: OperationalNoticeKind, fields: Record<string, string>) {
     return postOperationalNotice(this, kind, fields);
+  }
+
+  hasLiveToken(): boolean {
+    return liveTokens.has(this);
+  }
+
+  async liveReadiness(opts?: { appId?: string; guildId?: string; network?: boolean; fetchImpl?: typeof fetch }): Promise<LiveReadiness> {
+    const appId = (opts?.appId ?? this.env.DISCORD_APP_ID ?? "").trim();
+    const guildId = (opts?.guildId ?? this.liveIdentity?.guildId ?? "").trim();
+    const targetGuild = /^\d{17,20}$/.test(guildId) ? guildId : "1540022458126700674";
+    const targetApp = /^\d{17,20}$/.test(appId) ? appId : "1540058003888410806";
+    const saved = loadScratchState(targetGuild);
+    const report = await assessLiveReadiness({
+      bp: this.bp,
+      appId: targetApp,
+      guildId: targetGuild,
+      tokenInMemory: this.hasLiveToken(),
+      liveConnected: this.guild.live === true,
+      scratchConfirmed: this.scratchConfirmed,
+      saved,
+      network: opts?.network,
+      fetchImpl: opts?.fetchImpl,
+    });
+    if (report.publicApp.publicKey && /^[0-9a-fA-F]{64}$/.test(report.publicApp.publicKey)) {
+      this.env.DISCORD_PUBLIC_KEY = report.publicApp.publicKey;
+    }
+    this.store.appendAudit({
+      actor: "owner-cli",
+      action: "discord.public_probe",
+      target: targetApp,
+      details: {
+        reachable: report.publicApp.reachable,
+        botPublic: report.publicApp.botPublic,
+        install: report.publicApp.installPermissions,
+        match: report.publicApp.installMatchesRequired,
+        missing: report.publicApp.missing,
+        hashMatch: report.scratchState.hashMatch,
+        tokenInMemory: report.tokenInMemory,
+        blocker: Boolean(report.blocker),
+      },
+    });
+    return report;
   }
 }
 

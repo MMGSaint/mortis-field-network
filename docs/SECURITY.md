@@ -23,6 +23,8 @@ Blueprint `never_administrator: true`. Invite integer `295011699728` (derived fr
 
 An earlier published figure `294851834304` was a transcription error. It omitted View Channel, Send Messages, Manage Channels, Manage Roles, and Connect. If the scratch bot was invited with that URL, re-invite with `295011699728`. Do not keep Administrator.
 
+Developer Portal default install (`install_params`) can disagree with the guild-held integer. Public RPC is the way to inspect the default without a token. Guild-held bits are only visible after Connect.
+
 ## Dispatch boundary
 
 No player-facing `postMessage` outside `dispatch.send` / `discordDeliver` called from it. Restricted and developer term lists **block**. They do not rewrite copy.

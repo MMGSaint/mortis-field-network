@@ -13,6 +13,13 @@ import { assessHealth } from "./health.ts";
 import { commandPayloads } from "./commands.ts";
 import { enactLockdown, liftLockdown } from "./envoy.ts";
 import { interactionOpensModal } from "./discord-gateway.ts";
+import {
+  assessLiveReadiness,
+  assessPublicApplication,
+  CAPTURED_INSTALL_PARAMS,
+  classifyDiscordHttp,
+  probePublicApplication,
+} from "./discord-public.ts";
 
 export type TestResult = { id: string; name: string; pass: boolean; detail: string };
 
@@ -1232,6 +1239,132 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S53", "Lockdown hides ENTRY and keeps HOW TO BEGIN readable", pass, `notice=${rt.guild.canView(guest.id, notice)} guide=${rt.guild.canView(guest.id, guide)} intake=${rt.guild.canView(guest.id, intake)}`);
   } catch (e) {
     push("S53", "Lockdown hides ENTRY and keeps HOW TO BEGIN readable", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const assessed = assessPublicApplication(
+      {
+        id: "1540058003888410806",
+        name: "Mortis Field Network — Dev",
+        bot_public: true,
+        install_params: { scopes: ["applications.commands", "bot"], permissions: CAPTURED_INSTALL_PARAMS },
+        verify_key: "a".repeat(64),
+      },
+      "1540058003888410806",
+    );
+    const pass =
+      assessed.installMatchesRequired === false &&
+      assessed.administrator === false &&
+      assessed.botPublic === true &&
+      assessed.missing.includes("SEND_MESSAGES") &&
+      assessed.missing.includes("MANAGE_CHANNELS") &&
+      assessed.missing.includes("MANAGE_ROLES") &&
+      assessed.excess.includes("MANAGE_GUILD") &&
+      assessed.findings.some((f) => f.code === "app.install_params" && f.severity === "hold") &&
+      assessed.findings.some((f) => f.code === "app.bot_public" && f.severity === "warn") &&
+      assessed.publicKey === "a".repeat(64) &&
+      CAPTURED_INSTALL_PARAMS !== BOT_PERMISSION_INTEGER.toString();
+    push(
+      "S54",
+      "Captured public install_params is not canonical and is missing SEND/MANAGE bits",
+      pass,
+      `missing=${assessed.missing.join(",")} excess=${assessed.excess.join(",")}`,
+    );
+  } catch (e) {
+    push("S54", "Captured public install_params is not canonical and is missing SEND/MANAGE bits", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const blocked = classifyDiscordHttp(
+      429,
+      '{"message":"You are being blocked from accessing our API temporarily due to exceeding global rate limits."}',
+    );
+    const retry = classifyDiscordHttp(429, '{"retry_after":1}');
+    const unauth = classifyDiscordHttp(401, '{"message":"401: Unauthorized","code":0}');
+    const forbidden = classifyDiscordHttp(403, '{"message":"Missing Access","code":50001}');
+    const pass = blocked === "blocked" && retry === "rate_limit" && unauth === "unauthorized" && forbidden === "forbidden";
+    push("S55", "Discord HTTP classifier separates IP block from retryable 429", pass, `blocked=${blocked} retry=${retry} 401=${unauth} 403=${forbidden}`);
+  } catch (e) {
+    push("S55", "Discord HTTP classifier separates IP block from retryable 429", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const headersSeen: string[] = [];
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      headersSeen.push(JSON.stringify(init?.headers ?? {}));
+      if (String(url).includes("/gateway")) {
+        return new Response(JSON.stringify({ url: "wss://gateway.discord.gg" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          id: "1540058003888410806",
+          name: "Mortis Field Network — Dev",
+          bot_public: true,
+          install_params: { permissions: CAPTURED_INSTALL_PARAMS, scopes: ["bot"] },
+          verify_key: "b".repeat(64),
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    const probe = await probePublicApplication("1540058003888410806", fetchImpl);
+    const authLeak = headersSeen.some((h) => /authorization/i.test(h));
+    push(
+      "S56",
+      "Public application probe never sends a bot token",
+      probe.reachable && !authLeak && probe.botPublic === true,
+      `authLeak=${authLeak} reachable=${probe.reachable}`,
+    );
+  } catch (e) {
+    push("S56", "Public application probe never sends a bot token", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    const report = await assessLiveReadiness({
+      bp: rt.bp,
+      appId: "1540058003888410806",
+      guildId: "1540022458126700674",
+      tokenInMemory: rt.hasLiveToken(),
+      liveConnected: rt.guild.live === true,
+      scratchConfirmed: rt.scratchConfirmed,
+      saved: { guildId: "1540022458126700674", bindings: [["role.owner", "1"]], lastAppliedHash: "deadbeef" },
+      network: false,
+    });
+    const pass =
+      rt.hasLiveToken() === false &&
+      report.tokenInMemory === false &&
+      report.liveConnected === false &&
+      Boolean(report.blocker) &&
+      /never paste the token in chat/i.test(report.blocker ?? "") &&
+      report.scratchState.present === true &&
+      report.scratchState.hashMatch === false;
+    push(
+      "S57",
+      "Live readiness reports token-not-in-memory blocker and blueprint hash drift",
+      pass,
+      `blocker=${Boolean(report.blocker)} hashMatch=${report.scratchState.hashMatch}`,
+    );
+  } catch (e) {
+    push("S57", "Live readiness reports token-not-in-memory blocker and blueprint hash drift", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return new Response(
+        JSON.stringify({
+          code: 0,
+          message: "You are being blocked from accessing our API temporarily due to exceeding global rate limits.",
+        }),
+        { status: 429 },
+      );
+    }) as typeof fetch;
+    const probe = await probePublicApplication("1540058003888410806", fetchImpl);
+    const pass = probe.kind === "blocked" && probe.ok === false && calls === 1;
+    push("S58", "IP-block 429 fails closed without spinning retries on the public probe", pass, `kind=${probe.kind} calls=${calls}`);
+  } catch (e) {
+    push("S58", "IP-block 429 fails closed without spinning retries on the public probe", false, e instanceof Error ? e.message : String(e));
   }
 
   void writeFileSync;

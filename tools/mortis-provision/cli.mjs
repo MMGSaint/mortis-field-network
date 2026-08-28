@@ -25,6 +25,7 @@ function help() {
   adopt <key> <id>      bind a live object to a blueprint key
   rollback              print prior hash / restore note
   invite-url            least-privilege bot invite URL (needs DISCORD_APP_ID)
+  probe-app [appId]     public application RPC (no token). Default scratch app id.
 `);
 }
 
@@ -72,6 +73,27 @@ if (cmd === "invite-url") {
   const appId = process.env.DISCORD_APP_ID ?? "APP_ID";
   console.log(rt.inviteUrl().replace("app_phase1", appId));
   process.exit(0);
+}
+
+if (cmd === "probe-app") {
+  const { assessLiveReadiness } = await import(pathToFileURL(join(cwd, "src/lib/mortis/discord-public.ts")).href);
+  const { loadScratchState } = await import(pathToFileURL(join(cwd, "src/lib/mortis/discord-rest.ts")).href);
+  const appId = process.argv[3] ?? process.env.DISCORD_APP_ID ?? "1540058003888410806";
+  const guildId = process.env.DISCORD_GUILD_ID ?? "1540022458126700674";
+  const report = await assessLiveReadiness({
+    bp: rt.bp,
+    appId,
+    guildId,
+    tokenInMemory: rt.hasLiveToken(),
+    liveConnected: rt.guild.live === true,
+    scratchConfirmed: rt.scratchConfirmed,
+    saved: loadScratchState(guildId),
+    network: true,
+  });
+  const publicKeyPresent = Boolean(report.publicApp.publicKey);
+  const { publicKey: _omit, ...publicApp } = report.publicApp;
+  console.log(JSON.stringify({ ...report, publicApp: { ...publicApp, publicKeyPresent } }, null, 2));
+  process.exit(report.blocker || !report.publicApp.reachable ? 2 : report.publicApp.installMatchesRequired && report.publicApp.botPublic === false ? 0 : 1);
 }
 
 help();

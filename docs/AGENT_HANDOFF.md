@@ -7,7 +7,20 @@ Branch: `main`
 
 Also read [FABLE.md](FABLE.md), [CHANGELOG.md](CHANGELOG.md), [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md).
 
-## Current state (2026-08-26, pre-Fable)
+## Current state (2026-08-27, live integration)
+
+Phase 1 Field Network engine + Phase 2 player-safe UX are implemented. GitHub is the **canonical engineering source**.
+
+- Transport default: simulator. Live REST + gateway exist; attach only after operator Connect (token in Provision password field → WeakMap).
+- Scratch guild `1540022458126700674`. Bindings in `data/scratch-guild-state.json` (snowflakes only).
+- Engine tests: T1–T9 + S1–S58 PASS (simulator).
+- Tokenless live probe of the public application RPC is implemented (`probe-app` / Provision).
+- Production Discord: **untouched**.
+- Phase 3 Operations Room: **not opened**.
+
+**Permission integer:** canonical `295011699728`, locked by S41. Published `294851834304` was a transcription error. Developer Portal default install was live-observed as `7347005485008037` (S54) — that is **not** the guild re-authorize integer. Health HOLDs on Admin (S42).
+
+**Live Connect blocker:** bot token is not in this process. Re-authorizing the bot in Discord does not transmit the token. Do not paste it in chat.
 
 Phase 1 Field Network engine + Phase 2 player-safe UX are implemented. GitHub is the **canonical engineering source**.
 
@@ -26,7 +39,7 @@ Phase 1 Field Network engine + Phase 2 player-safe UX are implemented. GitHub is
 | Provision, dispatch, tickets, intake, health, lockdown, retract, webhooks, pins | Implemented. Simulator-proven. |
 | Gateway ACK / type-9 modal routing / op-9 reconnect | Implemented. Simulator-proven (S33, S51). Live READY unverified. |
 | Player FAQ / HOW TO BEGIN / WORLD ACCESS / /orient / /ticket choices | Shipped, neutral copy. |
-| Live scratch Apply / Accept / Intake / Open ticket | Previously applied 2026-08-20. **Not re-verified this process.** |
+| Live scratch Apply / Accept / Intake / Open ticket | Previously applied 2026-08-20. **Not re-verified this process — token not in memory.** Public app RPC probed 2026-08-27. |
 | Envoy Worker HTTP Interactions | Stub only. Leave Interactions URL blank. |
 
 ## Commands

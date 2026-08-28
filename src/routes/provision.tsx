@@ -17,6 +17,7 @@ import {
   runValidate,
   runHealth,
   runRotateWebhooks,
+  runLiveReadiness,
 } from "@/lib/mortis/server";
 import type { PlanOp } from "@/lib/mortis/types";
 
@@ -83,6 +84,15 @@ function Provision() {
   const rotate = useMutation({
     mutationFn: () => runRotateWebhooks(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["snapshot"] }),
+  });
+  const readiness = useMutation({
+    mutationFn: () => runLiveReadiness({ data: { guildId, appId } }),
+    onSuccess: (data) => {
+      if (data.publicApp.publicKey && /^[0-9a-fA-F]{64}$/.test(data.publicApp.publicKey)) {
+        setPublicKey((k) => k || data.publicApp.publicKey || "");
+      }
+      qc.invalidateQueries({ queryKey: ["snapshot"] });
+    },
   });
 
   const live = snap.data?.live;
@@ -159,6 +169,14 @@ function Provision() {
         >
           {connect.isPending ? "Connecting…" : "Connect scratch guild"}
         </button>
+        <button
+          type="button"
+          disabled={!appId || readiness.isPending}
+          onClick={() => readiness.mutate()}
+          className="ml-2 min-h-11 border border-line px-4 text-kicker tracking-kicker uppercase text-bone disabled:opacity-40"
+        >
+          {readiness.isPending ? "Probing…" : "Probe public application"}
+        </button>
         {live?.connected && (
           <button
             type="button"
@@ -174,6 +192,41 @@ function Provision() {
           Interactions Endpoint URL: leave it blank. If Discord still shows the placeholder https://nice-example.local/api/interactions, do not Save it — that URL is not live and will steal button clicks from the gateway.
         </p>
         {connect.error && <p className="text-sm text-brass">{connect.error.message}</p>}
+        {readiness.error && <p className="text-sm text-brass">{readiness.error.message}</p>}
+        {readiness.data && (
+          <div className="space-y-2 text-sm">
+            <p className="text-kicker tracking-kicker uppercase text-brass">Live readiness (no token)</p>
+            <p>
+              Discord transport {readiness.data.discordGateway.ok ? "reachable" : "not reachable"}
+              {readiness.data.discordGateway.kind ? ` · ${readiness.data.discordGateway.kind}` : ""}
+              {" · "}
+              token in memory {readiness.data.tokenInMemory ? "yes" : "no"}
+              {" · "}
+              live {readiness.data.liveConnected ? "connected" : "simulator"}
+            </p>
+            <p>
+              App {readiness.data.publicApp.name ?? readiness.data.publicApp.appId}
+              {readiness.data.publicApp.botPublic === true ? " · Public Bot ON" : ""}
+              {readiness.data.publicApp.installPermissions
+                ? ` · default install ${readiness.data.publicApp.installPermissions}`
+                : ""}
+              {readiness.data.publicApp.installMatchesRequired ? " · matches canonical" : " · does not match canonical"}
+            </p>
+            <p>
+              Scratch state {readiness.data.scratchState.present ? `${readiness.data.scratchState.bindings} bindings` : "missing"}
+              {" · "}
+              hash {readiness.data.scratchState.hashMatch ? "matches last apply" : "differs from last apply — Plan before Apply"}
+            </p>
+            {readiness.data.blocker && <p className="text-brass">{readiness.data.blocker}</p>}
+            <ul className="space-y-1 text-muted">
+              {readiness.data.publicApp.findings.map((f) => (
+                <li key={f.code}>
+                  {f.severity.toUpperCase()} {f.code} — {f.detail}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {appId && (
           <p className="break-all text-kicker text-muted">
             Invite (least privilege {snap.data?.perms}): {invite.replace("app_phase1", appId)}

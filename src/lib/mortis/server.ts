@@ -10,6 +10,7 @@ import { createEvent, markEligible } from "./events.ts";
 import type { TicketCategory } from "./types.ts";
 import { postOperationalNotice, type OperationalNoticeKind } from "./notices.ts";
 import type { HealthReport } from "./health.ts";
+import type { LiveReadiness } from "./discord-public.ts";
 
 const g = globalThis as typeof globalThis & { __mortisRuntime?: Promise<MortisRuntime> };
 
@@ -286,6 +287,14 @@ export const runHealth = createServerFn({ method: "POST" })
   .handler(async (): Promise<HealthReport> => {
     const rt = await runtime();
     return rt.health();
+  });
+
+export const runLiveReadiness = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: { appId?: string; guildId?: string }) => d ?? {})
+  .handler(async ({ data }): Promise<LiveReadiness> => {
+    const rt = await runtime();
+    return rt.liveReadiness({ appId: data.appId, guildId: data.guildId, network: true });
   });
 
 export const runWalkthrough = createServerFn({ method: "POST" })

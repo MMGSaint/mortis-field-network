@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { SimulatedGuild, type SimChannel, type SimRole } from "./discord-sim.ts";
 import { BOT_PERM_NAMES, PERM } from "./permissions.ts";
 import type { Overwrite } from "./permissions.ts";
+import { classifyDiscordHttp } from "./discord-public.ts";
 
 const API = "https://discord.com/api/v10";
 const UA = "MortisFieldNetwork-Envoy/phase1 (scratch-validation)";
@@ -218,6 +219,14 @@ export class DiscordRestGuild extends SimulatedGuild {
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
       if (res.status === 429) {
+        const text = await res.text();
+        const kind = classifyDiscordHttp(429, text);
+        lastErr = Object.assign(new Error(`discord ${method} ${path} 429${kind === "blocked" ? " blocked" : ""}`), {
+          status: 429,
+          body: text.slice(0, 400),
+          kind,
+        });
+        if (kind === "blocked") throw lastErr;
         const retry = Number(res.headers.get("retry-after") ?? "1");
         await sleep(Math.min(Math.max(retry, 0.25) * 1000, 8000));
         continue;
