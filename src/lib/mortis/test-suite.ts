@@ -1944,6 +1944,42 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S77", "Notification preferences refuse unknown members and pre-intake members", false, e instanceof Error ? e.message : String(e));
   }
 
+  // S79 — walkthrough covers /faq (full + topic) and /notifications end-to-end.
+  try {
+    const rt = MortisRuntime.load(cwd);
+    await rt.bootstrapKeys();
+    rt.seedOwner();
+    const result = await runFirstPlayerWalkthrough(rt);
+    const faqAllStep = result.steps.find((s) => s.id === "faq_all");
+    const faqTopicStep = result.steps.find((s) => s.id === "faq_topic");
+    const notifStep = result.steps.find((s) => s.id === "notifications");
+    const orientStep = result.steps.find((s) => s.id === "orient");
+    const pass =
+      Boolean(faqAllStep?.pass) &&
+      Boolean(faqTopicStep?.pass) &&
+      Boolean(notifStep?.pass) &&
+      Boolean(orientStep?.pass) &&
+      result.pass === true;
+    push(
+      "S79",
+      "First-player walkthrough exercises /faq and /notifications alongside /orient",
+      pass,
+      `faq_all=${faqAllStep?.pass} faq_topic=${faqTopicStep?.pass} notif=${notifStep?.pass} overall=${result.pass}`,
+    );
+  } catch (e) {
+    push("S79", "First-player walkthrough exercises /faq and /notifications alongside /orient", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S80 — FAQ content stays player-safe (no restricted or dev vocabulary).
+  try {
+    const faqSrc = readFileSync(join(cwd, "src/lib/mortis/faq.ts"), "utf8");
+    const forbidden = /Season 3|Ashwright|True Name|sprint|MCA-|MIN-/;
+    const clean = !forbidden.test(faqSrc);
+    push("S80", "FAQ text carries no restricted terms or dev vocabulary", clean, `clean=${clean}`);
+  } catch (e) {
+    push("S80", "FAQ text carries no restricted terms or dev vocabulary", false, e instanceof Error ? e.message : String(e));
+  }
+
   // S78 — scheduler + notices operational-kind maps stay in step.
   try {
     const { default: _u } = { default: undefined };

@@ -47,6 +47,51 @@ export function commandPayloads(bp: Blueprint): SlashCommandPayload[] {
         { name: "status", description: "Status field", type: 3, required: false },
       ];
     }
+    if (c.name === "faq") {
+      base.options = [
+        {
+          name: "topic",
+          description: "Optional topic. Leave blank for the full list.",
+          type: 3,
+          required: false,
+          choices: [
+            { name: "start", value: "start" },
+            { name: "communication", value: "communication" },
+            { name: "conduct", value: "conduct" },
+            { name: "tickets", value: "tickets" },
+            { name: "accessibility", value: "accessibility" },
+            { name: "world", value: "world" },
+            { name: "notifications", value: "notifications" },
+            { name: "help", value: "help" },
+          ],
+        },
+      ];
+    }
+    if (c.name === "notifications") {
+      base.options = [
+        {
+          name: "channel",
+          description: "Which category",
+          type: 3,
+          required: true,
+          choices: [
+            { name: "notice", value: "notice" },
+            { name: "dispatches", value: "dispatches" },
+            { name: "tickets_own", value: "tickets_own" },
+          ],
+        },
+        {
+          name: "enabled",
+          description: "on to hear, off to mute",
+          type: 3,
+          required: true,
+          choices: [
+            { name: "on", value: "on" },
+            { name: "off", value: "off" },
+          ],
+        },
+      ];
+    }
     return base;
   });
 }
