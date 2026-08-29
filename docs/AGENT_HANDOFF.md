@@ -7,14 +7,14 @@ Branch: `main`
 
 Also read [FABLE.md](FABLE.md), [CHANGELOG.md](CHANGELOG.md), [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md).
 
-## Current state (2026-08-28, live scratch verified)
+## Current state (2026-08-29, live scratch verified)
 
 Phase 1 Field Network engine + Phase 2 player-safe UX are implemented. GitHub is the **canonical engineering source**.
 
 - Transport default: simulator. Live REST + gateway exist; attach only after operator Connect (token in Provision password field → WeakMap).
-- Scratch guild `1540022458126700674` **live-applied** this process. Bindings in `data/scratch-guild-state.json` (snowflakes only). lastAppliedHash `4823dcdb…`.
-- Engine tests: T1–T9 + S1–S67 PASS (simulator).
-- Live this process: Connect, Validate, Plan, Apply, idempotent second Apply, Accept/Intake/Initiate, HOW TO BEGIN / REFERENCE / WORLD ACCESS, tickets (all four categories previously; general claim/close this pass), dispatch, notices, retract, lockdown+lift, drift detect+repair, gateway READY, 400/403/404 bodies captured.
+- Scratch guild `1540022458126700674` **live-applied**. Bindings in `data/scratch-guild-state.json` (snowflakes only). lastAppliedHash `4823dcdb…`.
+- Engine tests: T1–T9 + S1–S69 PASS (simulator).
+- Live this process: Connect, Validate, Plan (0 creates / 0 updates), Apply no-op, Accept/Intake/Initiate, HOW TO BEGIN / REFERENCE / WORLD ACCESS, tickets (general/report/appeal/accessibility), dispatch+retract, notices, lockdown+lift, overwrite sweep 0 failures, gateway READY, slash commands registered, duplicate templates cleaned, pin refresh `already_unpinned` (403/50013).
 - Production Discord: **untouched**.
 - Phase 3 Operations Room: **not opened**.
 
@@ -33,7 +33,7 @@ Phase 1 Field Network engine + Phase 2 player-safe UX are implemented. GitHub is
 | Surface | Status |
 |---|---|
 | Provision, dispatch, tickets, intake, health, lockdown, retract, webhooks | Implemented. Simulator-proven. **Live-verified 2026-08-28 on scratch.** |
-| Pins | Messages posted. Sticky pin 403/50013 without PIN_MESSAGES. Deduped. |
+| Pins | Messages posted. Sticky pin 403/50013 without PIN_MESSAGES. Deduped. Health `pin.unpinnable` on empty hydrate (S68). Duplicate scratch copies cleaned 2026-08-29. |
 | Gateway ACK / type-9 modal routing / op-9 reconnect | Implemented. Simulator-proven (S33, S51). **Live READY 2026-08-28.** |
 | Player FAQ / HOW TO BEGIN / WORLD ACCESS / /orient / /ticket | Shipped, neutral copy. Live sibling order repaired. |
 | Live scratch Apply / Accept / Intake / Open ticket | **Verified 2026-08-28.** |

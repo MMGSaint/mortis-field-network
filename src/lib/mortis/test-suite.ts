@@ -14,7 +14,7 @@ import { commandPayloads } from "./commands.ts";
 import { enactLockdown, liftLockdown } from "./envoy.ts";
 import { interactionOpensModal } from "./discord-gateway.ts";
 import { shouldRetryChannelCreateWithoutOverwrites } from "./discord-rest.ts";
-import { categoryOrderDriftKeys, overwriteSweepTargets, plan } from "./provision.ts";
+import { categoryOrderDriftKeys, overwriteSweepTargets, plan, findExistingTemplatePost } from "./provision.ts";
 import {
   assessLiveReadiness,
   assessPublicApplication,
@@ -1548,6 +1548,56 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     );
   } catch (e) {
     push("S67", "Overwrite sweep targets channels and categories only — never roles or webhooks", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const key = "arrival.guide";
+    const ch = rt.guild.channelById(rt.store.blueprintState.get(key)!)!;
+    ch.messages = [];
+    const h = assessHealth(rt.bp, rt.store, rt.guild, { botPermissions: botPermissionInteger().toString() });
+    const unpinnable = h.findings.some((f) => f.code === "pin.unpinnable" && f.target === key);
+    const missing = h.findings.some((f) => f.code === "pin.missing");
+    push(
+      "S68",
+      "Health reports pin.unpinnable on empty hydrate when PIN_MESSAGES is not held",
+      unpinnable && !missing,
+      `unpinnable=${unpinnable} missing=${missing}`,
+    );
+  } catch (e) {
+    push("S68", "Health reports pin.unpinnable on empty hydrate when PIN_MESSAGES is not held", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const key = "arrival.guide";
+    const id = rt.store.blueprintState.get(key)!;
+    const ch = rt.guild.channelById(id)!;
+    ch.messages = [
+      {
+        id: "wh_post",
+        channel_id: id,
+        content: "HOW TO BEGIN\n\nYou arrived somewhere that was already running.",
+        author_id: "webhook_snowflake_not_bot",
+        timestamp: new Date().toISOString(),
+        pinned: false,
+      },
+    ];
+    const found = await findExistingTemplatePost(rt.guild, id, "HOW TO BEGIN");
+    const before = ch.messages.length;
+    rt.store.lastAppliedHash = "force-reapply";
+    await rt.apply();
+    const pass = found?.id === "wh_post" && ch.messages.length === before;
+    push(
+      "S69",
+      "Apply does not duplicate when an unpinned template post is not authored as the bot user",
+      pass,
+      `found=${found?.id} before=${before} after=${ch.messages.length}`,
+    );
+  } catch (e) {
+    push("S69", "Apply does not duplicate when an unpinned template post is not authored as the bot user", false, e instanceof Error ? e.message : String(e));
   }
 
   void writeFileSync;

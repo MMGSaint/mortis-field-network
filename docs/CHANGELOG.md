@@ -2,6 +2,15 @@
 
 Engineering log for https://github.com/MMGSaint/mortis-field-network. Simulator-proven unless marked live.
 
+## 2026-08-29 — live continuation: template dedupe + pin.unpinnable
+
+Live scratch still Connected (gateway READY, Administrator false, missingBits []). Apply is a no-op. Tickets (all four categories), dispatch, retract, intake, overwrite sweep, slash `/orient` `/ticket` `/post` `/lockdown` re-verified.
+
+- Historical duplicate HOW TO BEGIN / TERMS / INTAKE / SUPPORT DESK / REFERENCE / WORLD ACCESS posts retracted on scratch. Keepers are the buttoned (or latest) copies. Pin refresh returned `already_unpinned` (403/50013 Missing Permissions) and did not repost.
+- `findExistingTemplatePost` matches template title, not only bot-user authorship, so webhook-looking or foreign-author copies do not trigger another dispatch (S69).
+- Health `pin.unpinnable` on empty live hydrate when PIN_MESSAGES is not held (S68). No longer silent just because hydrate skipped message history.
+- Excess-permission copy no longer tells the operator to re-invite. Excess bits are a warn. Do not add Administrator.
+
 ## 2026-08-28 — live scratch integration (token in memory)
 
 Scratch guild `1540022458126700674` Connected. Gateway READY. Administrator false. Guild-held bits include canonical `295011699728` (excess CREATE_INSTANT_INVITE, ATTACH_FILES, SPEAK — warn only).

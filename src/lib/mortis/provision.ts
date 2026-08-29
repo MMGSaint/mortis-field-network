@@ -160,24 +160,35 @@ export function overwriteSweepTargets(bp: Blueprint, store: EnvoyStore): Array<{
   return out;
 }
 
-async function findExistingTemplatePost(
+export async function findExistingTemplatePost(
   guild: SimulatedGuild,
   liveId: string,
+  title?: string,
 ): Promise<{ id: string; pinned?: boolean } | undefined> {
+  const needle = title?.trim().toUpperCase() ?? "";
+  const match = (m: { id: string; author_id?: string; pinned?: boolean; content?: string }) => {
+    if (m.pinned) return true;
+    if (needle && (m.content ?? "").toUpperCase().startsWith(needle)) return true;
+    if (m.author_id === guild.botUserId || m.author_id === "webhook") return true;
+    return false;
+  };
   const live = guild.channelById(liveId);
-  const pinned = live?.messages.find((m) => m.pinned);
-  if (pinned) return pinned;
-  const ours = live?.messages.find((m) => m.author_id === guild.botUserId || m.author_id === "webhook");
-  if (ours) return ours;
+  const cached = (live?.messages ?? []).find((m) => match(m));
+  if (cached) return cached;
   if (!guild.live) return undefined;
   try {
     const recent = await restApi<unknown>(guild, "GET", `/channels/${liveId}/messages?limit=25`);
     const rows: Array<Record<string, unknown>> = Array.isArray(recent) ? (recent as Array<Record<string, unknown>>) : [];
     const mapped = rows.map((m) => {
       const author = (m.author as Record<string, unknown> | undefined) ?? {};
-      return { id: String(m.id), author_id: String(author.id ?? ""), pinned: Boolean(m.pinned) };
+      return {
+        id: String(m.id),
+        author_id: String(author.id ?? ""),
+        pinned: Boolean(m.pinned),
+        content: String(m.content ?? ""),
+      };
     });
-    return mapped.find((m) => m.pinned) ?? mapped.find((m) => m.author_id === guild.botUserId);
+    return mapped.find((m) => match(m));
   } catch {
     return undefined;
   }
@@ -501,7 +512,11 @@ export async function apply(
     if (!ch.pin_template) continue;
     const liveId = store.blueprintState.get(ch.key);
     if (!liveId) continue;
-    const existing = await findExistingTemplatePost(guild, liveId);
+    const existing = await findExistingTemplatePost(
+      guild,
+      liveId,
+      bp.templates.find((t) => t.key === ch.pin_template)?.title,
+    );
     if (existing) {
       if (!existing.pinned) {
         await tolerate403(`pin:${ch.key}`, warnings, store, actor, () => guild.pinMessage(liveId, existing.id));
