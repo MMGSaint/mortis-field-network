@@ -98,7 +98,28 @@ export function assessHealth(
     if (ch.pin_template && live.type === 0 && live.messages.length > 0) {
       const pinned = live.messages.some((m) => m.pinned);
       if (!pinned) {
-        findings.push({ severity: "warn", code: "pin.missing", target: ch.key, detail: "pin template not present on channel" });
+        let held: bigint | null = null;
+        try {
+          if (extra?.botPermissions) held = BigInt(extra.botPermissions);
+          else if (guild.botPermissions) held = BigInt(guild.botPermissions);
+        } catch {
+          held = null;
+        }
+        const canPin =
+          held === null ||
+          (held & PERM.ADMINISTRATOR) !== 0n ||
+          (held & PERM.PIN_MESSAGES) !== 0n ||
+          (held & PERM.MANAGE_MESSAGES) !== 0n;
+        if (!canPin) {
+          findings.push({
+            severity: "warn",
+            code: "pin.unpinnable",
+            target: ch.key,
+            detail: "template is in the channel but sticky pins need PIN_MESSAGES or MANAGE_MESSAGES — not in the least-privilege integer",
+          });
+        } else {
+          findings.push({ severity: "warn", code: "pin.missing", target: ch.key, detail: "pin template not present on channel" });
+        }
       }
     }
   }

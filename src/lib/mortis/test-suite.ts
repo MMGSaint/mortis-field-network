@@ -7,12 +7,14 @@ import { generateEd25519HexPair, signEd25519Hex, canonicalStringify, verifyRelea
 import { loadTermList, resetTermCache, injectTermListForTest, scanRestricted, scanDeveloper } from "./terms.ts";
 import { createEvent, markEligible, enact } from "./events.ts";
 import { createTicket, claimTicket, closeTicket, staffCanViewTicket, reopenTicket } from "./tickets.ts";
-import { PERM, botInviteUrl, botPermissionInteger, BOT_PERMISSION_INTEGER, permissionMissing, permissionExcess } from "./permissions.ts";
+import { PERM, botInviteUrl, botPermissionInteger, BOT_PERMISSION_INTEGER, permissionMissing, permissionExcess, botMemberAllowBits, generateOverwrites } from "./permissions.ts";
 import { runFirstPlayerWalkthrough } from "./walkthrough.ts";
 import { assessHealth } from "./health.ts";
 import { commandPayloads } from "./commands.ts";
 import { enactLockdown, liftLockdown } from "./envoy.ts";
 import { interactionOpensModal } from "./discord-gateway.ts";
+import { shouldRetryChannelCreateWithoutOverwrites } from "./discord-rest.ts";
+import { categoryOrderDriftKeys, overwriteSweepTargets, plan } from "./provision.ts";
 import {
   assessLiveReadiness,
   assessPublicApplication,
@@ -1120,8 +1122,12 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     const ticket = cmds.find((c) => c.name === "ticket");
     const cat = ticket?.options?.find((o) => o.name === "category");
     const values = (cat?.choices ?? []).map((c) => c.value).sort().join("|");
-    const pass = values === "accessibility|appeal|general|report";
-    push("S45", "Slash /ticket category uses Discord choices", pass, `values=${values}`);
+    const requiredOrderOk = ticket?.options?.every((o, i, arr) => {
+      if (o.required) return arr.slice(0, i).every((p) => p.required !== false);
+      return true;
+    });
+    const pass = values === "accessibility|appeal|general|report" && cat?.required === true && requiredOrderOk === true;
+    push("S45", "Slash /ticket category uses Discord choices", pass, `values=${values} required=${cat?.required} order=${requiredOrderOk}`);
   } catch (e) {
     push("S45", "Slash /ticket category uses Discord choices", false, e instanceof Error ? e.message : String(e));
   }
@@ -1365,6 +1371,183 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S58", "IP-block 429 fails closed without spinning retries on the public probe", pass, `kind=${probe.kind} calls=${calls}`);
   } catch (e) {
     push("S58", "IP-block 429 fails closed without spinning retries on the public probe", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const held = botPermissionInteger();
+    const allow = botMemberAllowBits(held);
+    const withAdmin = botMemberAllowBits(PERM.ADMINISTRATOR | held);
+    const pass =
+      (allow & PERM.PIN_MESSAGES) === 0n &&
+      (allow & PERM.MANAGE_MESSAGES) === 0n &&
+      (allow & PERM.VIEW_CHANNEL) !== 0n &&
+      (allow & PERM.SEND_MESSAGES) !== 0n &&
+      (allow & PERM.MANAGE_CHANNELS) !== 0n &&
+      (allow & PERM.MANAGE_WEBHOOKS) !== 0n &&
+      (withAdmin & PERM.PIN_MESSAGES) !== 0n &&
+      (botMemberAllowBits(held | PERM.PIN_MESSAGES) & PERM.PIN_MESSAGES) !== 0n;
+    push(
+      "S59",
+      "Bot member overwrite does not grant PIN_MESSAGES or MANAGE_MESSAGES unless held",
+      pass,
+      `allow=${allow} pin=${(allow & PERM.PIN_MESSAGES) !== 0n} manageMsg=${(allow & PERM.MANAGE_MESSAGES) !== 0n}`,
+    );
+  } catch (e) {
+    push("S59", "Bot member overwrite does not grant PIN_MESSAGES or MANAGE_MESSAGES unless held", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const held = botPermissionInteger();
+    const ows = generateOverwrites({
+      guildId: "g1",
+      audience: "staff",
+      kind: "text",
+      readonly: false,
+      heldPermissions: held,
+      roleSnowflakes: { everyone: "g1", initiate: "i1", shadow: "s1", staff: ["st1"], bot: "b1" },
+    });
+    const staff = ows.find((o) => o.id === "st1");
+    const bot = ows.find((o) => o.id === "b1");
+    const staffAllow = BigInt(staff?.allow ?? "0");
+    const botAllow = BigInt(bot?.allow ?? "0");
+    const pass =
+      (staffAllow & PERM.MANAGE_MESSAGES) === 0n &&
+      (botAllow & PERM.MANAGE_MESSAGES) === 0n &&
+      (botAllow & PERM.MANAGE_CHANNELS) !== 0n &&
+      (staffAllow & PERM.VIEW_CHANNEL) !== 0n;
+    push(
+      "S60",
+      "Channel overwrites mask unheld MANAGE_MESSAGES so Discord create/PUT does not 50001",
+      pass,
+      `staff=${staffAllow} bot=${botAllow}`,
+    );
+  } catch (e) {
+    push("S60", "Channel overwrites mask unheld MANAGE_MESSAGES so Discord create/PUT does not 50001", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    rt.guild.roles.push({
+      id: "managed_bot_role",
+      name: "Managed Bot",
+      hoist: false,
+      mentionable: false,
+      color: 0,
+      position: 99,
+      permissions: botPermissionInteger().toString(),
+      managed: true,
+    });
+    const { overwritesFor } = await import("./provision.ts");
+    const ows = overwritesFor(rt.bp, rt.store, rt.guild, "initiate+", "text", false, false);
+    const managed = ows.find((o) => o.id === "managed_bot_role");
+    const member = ows.find((o) => o.id === rt.guild.botUserId && o.type === 1);
+    const pass = Boolean(managed) && BigInt(managed?.allow ?? "0") !== 0n && Boolean(member);
+    push(
+      "S61",
+      "Overwrites include the Discord-managed integration role, not only presentation role.bot",
+      pass,
+      `managed=${Boolean(managed)} member=${Boolean(member)} allow=${managed?.allow}`,
+    );
+  } catch (e) {
+    push("S61", "Overwrites include the Discord-managed integration role, not only presentation role.bot", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const pass =
+      shouldRetryChannelCreateWithoutOverwrites(403, true) === true &&
+      shouldRetryChannelCreateWithoutOverwrites(403, false) === false &&
+      shouldRetryChannelCreateWithoutOverwrites(400, true) === false &&
+      shouldRetryChannelCreateWithoutOverwrites(500, true) === false;
+    push("S62", "Channel create retries without overwrites only on 403", pass, `pass=${pass}`);
+  } catch (e) {
+    push("S62", "Channel create retries without overwrites only on 403", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const key = "arrival.terms";
+    const id = rt.store.blueprintState.get(key)!;
+    const ch = rt.guild.channelById(id)!;
+    for (const m of ch.messages) m.pinned = false;
+    const before = ch.messages.length;
+    const { refreshPins } = await import("./provision.ts");
+    await refreshPins(rt.bp, rt.store, rt.guild, "owner_1");
+    const pass = ch.messages.length === before && ch.messages.length > 0;
+    push("S63", "Pin refresh does not duplicate when an unpinned template message already exists", pass, `before=${before} after=${ch.messages.length}`);
+  } catch (e) {
+    push("S63", "Pin refresh does not duplicate when an unpinned template message already exists", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const key = "arrival.terms";
+    const ch = rt.guild.channelById(rt.store.blueprintState.get(key)!)!;
+    for (const m of ch.messages) m.pinned = false;
+    const h = assessHealth(rt.bp, rt.store, rt.guild, { botPermissions: botPermissionInteger().toString() });
+    const unpinnable = h.findings.some((f) => f.code === "pin.unpinnable" && f.target === key);
+    const missing = h.findings.some((f) => f.code === "pin.missing" && f.target === key);
+    push("S64", "Health reports pin.unpinnable when template exists but PIN_MESSAGES is not held", unpinnable && !missing, `unpinnable=${unpinnable} missing=${missing}`);
+  } catch (e) {
+    push("S64", "Health reports pin.unpinnable when template exists but PIN_MESSAGES is not held", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const notice = rt.guild.channelById(rt.store.blueprintState.get("arrival.notice")!)!;
+    const guide = rt.guild.channelById(rt.store.blueprintState.get("arrival.guide")!)!;
+    const terms = rt.guild.channelById(rt.store.blueprintState.get("arrival.terms")!)!;
+    const intake = rt.guild.channelById(rt.store.blueprintState.get("arrival.intake")!)!;
+    // Swap HOW TO BEGIN to the end of ARRIVAL the way a late live create lands.
+    const maxPos = Math.max(notice.position, guide.position, terms.position, intake.position);
+    guide.position = maxPos + 10;
+    const drifted = categoryOrderDriftKeys(rt.bp, rt.store, rt.guild);
+    const p = await plan(rt.bp, rt.store, rt.guild);
+    const guideOp = p.ops.find((o) => o.op !== "orphan" && o.key === "arrival.guide");
+    const pass =
+      drifted.has("arrival.guide") &&
+      drifted.has("arrival.notice") &&
+      guideOp?.op === "update" &&
+      (guideOp.changes ?? []).includes("order");
+    push("S65", "Plan detects sibling channel-order drift (HOW TO BEGIN among ARRIVAL)", pass, `drifted=${[...drifted].join(",")} guideOp=${JSON.stringify(guideOp)}`);
+  } catch (e) {
+    push("S65", "Plan detects sibling channel-order drift (HOW TO BEGIN among ARRIVAL)", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const key = "arrival.guide";
+    const ch = rt.guild.channelById(rt.store.blueprintState.get(key)!)!;
+    for (const m of ch.messages) m.pinned = false;
+    const before = ch.messages.length;
+    rt.store.lastAppliedHash = "force-reapply";
+    await rt.apply();
+    const pass = ch.messages.length === before && before > 0;
+    push("S66", "Apply does not duplicate pin templates when an unpinned bot post already exists", pass, `before=${before} after=${ch.messages.length}`);
+  } catch (e) {
+    push("S66", "Apply does not duplicate pin templates when an unpinned bot post already exists", false, e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const targets = overwriteSweepTargets(rt.bp, rt.store);
+    const keys = new Set(targets.map((t) => t.key));
+    const roleHit = [...rt.store.blueprintState.keys()].some((k) => k.startsWith("role.") && keys.has(k));
+    const webhookHit = [...rt.store.blueprintState.keys()].some((k) => k.endsWith(".webhook") && keys.has(k));
+    const hasChannels = keys.has("arrival.notice") && keys.has("arrival") && keys.has("support.desk");
+    push(
+      "S67",
+      "Overwrite sweep targets channels and categories only — never roles or webhooks",
+      hasChannels && !roleHit && !webhookHit,
+      `n=${targets.length} roleHit=${roleHit} webhookHit=${webhookHit}`,
+    );
+  } catch (e) {
+    push("S67", "Overwrite sweep targets channels and categories only — never roles or webhooks", false, e instanceof Error ? e.message : String(e));
   }
 
   void writeFileSync;

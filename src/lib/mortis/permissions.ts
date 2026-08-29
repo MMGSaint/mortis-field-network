@@ -56,6 +56,38 @@ export function botPermissionInteger(): bigint {
   return packPerms(BOT_PERM_NAMES);
 }
 
+export function maskOverwriteAllow(allow: string | bigint, held: bigint): string {
+  let bits = typeof allow === "bigint" ? allow : 0n;
+  if (typeof allow === "string") {
+    try {
+      bits = BigInt(allow);
+    } catch {
+      return "0";
+    }
+  }
+  if ((held & PERM.ADMINISTRATOR) !== 0n) return bits.toString();
+  return (bits & held).toString();
+}
+
+/**
+ * Member overwrite for the live bot. Discord will 403/50001 if we try to ALLOW
+ * bits the bot does not hold at guild level — PIN_MESSAGES / MANAGE_MESSAGES
+ * are not in the invite integer, so they must not appear here unless held.
+ */
+export function botMemberAllowBits(held: bigint): bigint {
+  const base =
+    PERM.VIEW_CHANNEL |
+    PERM.SEND_MESSAGES |
+    PERM.EMBED_LINKS |
+    PERM.READ_MESSAGE_HISTORY |
+    PERM.MANAGE_CHANNELS |
+    PERM.MANAGE_WEBHOOKS |
+    PERM.CONNECT;
+  const optional = PERM.MANAGE_MESSAGES | PERM.PIN_MESSAGES;
+  if ((held & PERM.ADMINISTRATOR) !== 0n) return base | optional;
+  return (base | (optional & held)) & held;
+}
+
 export function botInviteUrl(appId: string): string {
   const perms = botPermissionInteger().toString();
   const scope = encodeURIComponent("bot applications.commands");
@@ -122,6 +154,7 @@ export function generateOverwrites(opts: {
   readonly: boolean;
   attachmentsRestricted?: boolean;
   showLockedCategory?: boolean;
+  heldPermissions?: bigint;
   roleSnowflakes: {
     everyone: string;
     initiate: string;
@@ -166,5 +199,11 @@ export function generateOverwrites(opts: {
     push(staffId, viewAllow | writeAllow | PERM.MANAGE_MESSAGES, 0n);
   }
   push(r.bot, viewAllow | writeAllow | PERM.MANAGE_MESSAGES | PERM.MANAGE_CHANNELS, 0n);
+  if (opts.heldPermissions !== undefined) {
+    const held = opts.heldPermissions;
+    for (const ow of out) {
+      ow.allow = maskOverwriteAllow(ow.allow, held);
+    }
+  }
   return out;
 }

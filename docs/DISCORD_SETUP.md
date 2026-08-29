@@ -56,7 +56,9 @@ Invite **only** to the scratch guild.
 
 Developer Portal **default install** (`install_params`) is independent of a guild re-authorize. A public RPC probe on 2026-08-27 showed default integer `7347005485008037` (missing Send Messages, Manage Channels, Manage Roles, and others) and Public Bot **on**. Always use the workstation invite URL (`295011699728`). Turn Public Bot off. Do not add Administrator.
 
-After invite: in the scratch guild, drag the bot's integration role **above** the presentation roles it must position (staff above bot above Initiate). The bot cannot move roles at or above itself.
+After invite: in the scratch guild, drag the bot's **managed integration role** **above** the presentation roles it must position (staff above bot above Initiate). The bot cannot move roles at or above itself. Apply grants presentation `role.bot` to the bot member; that is separate from the managed integration role Discord creates.
+
+Sticky pins: the least-privilege integer does **not** include PIN_MESSAGES or MANAGE_MESSAGES. Discord returns 403/50013 on PUT pin. Channel overwrites cannot grant those bits. Template posts and buttons still work unpinned. If you need sticky pins, that is an owner decision to add PIN_MESSAGES (`2251799813685248`) to a **new** invite integer — do not add Administrator to get pins.
 
 ## 3. Scratch guild
 
@@ -114,3 +116,18 @@ Only then set Interactions Endpoint URL to `https://<envoy-host>/interactions` *
 - Provision: re-apply previous blueprint (renames revert in place; created objects archive-lock).
 - LOCKDOWN: arrival closes; Discord invite-pause API needs Manage Server, which Phase 1 **does not grant**. Owner can pause invites in Server Settings if needed.
 - Kill: rotate bot token / CLI secret, or disable the interactions route.
+
+## 8. Live scratch notes (2026-08-28)
+
+Verified on guild `1540022458126700674` with integer `295011699728`, no Administrator.
+
+| Symptom | Cause | What to do |
+|---|---|---|
+| 403 50001 Missing Access on initiate+ overwrites | Bot lacked presentation `role.bot`; category overwrites do not apply to unsynced children | Apply grants the role. Do not add Administrator. |
+| 403 50013 on pins | PIN_MESSAGES / MANAGE_MESSAGES not held at guild level | Leave messages unpinned, or owner adds PIN_MESSAGES. |
+| 403 50013 on `system_channel` | Manage Server not in the integer | Ignore. Arrival NOTICE can still be the system channel if set by a human. |
+| `/ticket` 400 50035 | Required option after optional | Fixed: both options required. |
+| HOW TO BEGIN at the bottom | Late create; plan ignored sibling order | Fixed: plan+apply reorder within category. |
+| Public Bot on / wrong default install integer | Developer Portal, not this guild | Turn Public Bot off. Use the workstation invite URL. |
+
+Orphans (Discord defaults, closed tickets, managed bot role) stay report-only. History is never auto-deleted.

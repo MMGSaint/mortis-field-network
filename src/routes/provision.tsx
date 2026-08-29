@@ -138,7 +138,7 @@ function Provision() {
         )}
         {live?.connected && live.overwriteWarnings && live.overwriteWarnings.length > 0 && (
           <p className="text-sm text-brass">
-            Channel overwrite warnings (non-fatal): {live.overwriteWarnings.slice(0, 4).join(" · ")}
+            Channel overwrite warnings (non-fatal, {live.overwriteWarnings.length}): {live.overwriteWarnings.join(" · ")}
           </p>
         )}
         <label className="block text-kicker tracking-kicker uppercase text-muted">

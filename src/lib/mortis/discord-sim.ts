@@ -9,6 +9,7 @@ export type SimRole = {
   color: number;
   position: number;
   permissions: string;
+  managed?: boolean;
 };
 export type SimChannel = {
   id: string;
@@ -64,6 +65,8 @@ export class SimulatedGuild {
   forced429 = 0;
   backoffSleeps: number[] = [];
   botUserId = "bot_1";
+  /** Guild-level permission integer as Discord returns it. Empty = simulator canonical set. */
+  botPermissions = "";
   /** False for the in-memory harness. DiscordRestGuild sets true. */
   live = false;
   slashCommands: unknown[] = [];

@@ -1,5 +1,5 @@
 import { generateOverwrites, PERM } from "./permissions.ts";
-import { ensureBotChannelAccess } from "./discord-rest.ts";
+import { ensureBotChannelAccess, heldPermissionsOf, botMemberAllowFor } from "./discord-rest.ts";
 import { dispatchSend, mirrorAudit } from "./dispatch.ts";
 import { scanRestricted } from "./terms.ts";
 import { channelByKey } from "./blueprint.ts";
@@ -154,11 +154,13 @@ export async function createTicket(
     : (bp.roles.filter((r) => r.tier === "staff").map((r) => store.blueprintState.get(r.key)).filter(Boolean) as string[]);
 
   const botRole = store.blueprintState.get("role.bot") ?? guild.botUserId;
+  const held = heldPermissionsOf(guild);
   let overwrites = generateOverwrites({
     guildId: guild.id,
     audience: "granted",
     kind: "text",
     readonly: false,
+    heldPermissions: held,
     roleSnowflakes: {
       everyone: guild.id,
       initiate,
@@ -185,7 +187,7 @@ export async function createTicket(
     overwrites.push({
       id: guild.botUserId,
       type: 1,
-      allow: (PERM.VIEW_CHANNEL | PERM.SEND_MESSAGES | PERM.READ_MESSAGE_HISTORY | PERM.MANAGE_CHANNELS | PERM.MANAGE_WEBHOOKS).toString(),
+      allow: botMemberAllowFor(guild),
       deny: "0",
     });
   }
@@ -210,7 +212,7 @@ export async function createTicket(
     minimal.push({
       id: guild.botUserId,
       type: 1,
-      allow: (PERM.VIEW_CHANNEL | PERM.SEND_MESSAGES | PERM.READ_MESSAGE_HISTORY | PERM.MANAGE_MESSAGES).toString(),
+      allow: botMemberAllowFor(guild),
       deny: "0",
     });
   }

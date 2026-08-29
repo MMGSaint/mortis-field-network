@@ -6,7 +6,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { SimulatedGuild, type SimChannel, type SimRole } from "./discord-sim.ts";
-import { BOT_PERM_NAMES, PERM } from "./permissions.ts";
+import { BOT_PERM_NAMES, PERM, botMemberAllowBits, botPermissionInteger } from "./permissions.ts";
 import type { Overwrite } from "./permissions.ts";
 import { classifyDiscordHttp } from "./discord-public.ts";
 
@@ -75,6 +75,7 @@ function mapRole(raw: Record<string, unknown>): SimRole {
     color: Number(raw.color ?? 0),
     position: Number(raw.position ?? 0),
     permissions: String(raw.permissions ?? "0"),
+    managed: Boolean(raw.managed),
   };
 }
 
@@ -121,6 +122,9 @@ export function attachCurrentRestMethods(guild: SimulatedGuild): void {
     "deleteWebhook",
     "addRole",
     "createRole",
+    "patchRole",
+    "patchChannel",
+    "patchGuild",
   ]) {
     const fn = proto[name];
     if (typeof fn === "function") {
@@ -136,17 +140,53 @@ export async function restApi<T = unknown>(guild: SimulatedGuild, method: string
   return g.api<T>(method, path, body);
 }
 
-/** Channel-level bot member overwrite. Prefer this over Administrator. */
-export const BOT_MEMBER_ALLOW = (
-  PERM.VIEW_CHANNEL |
-  PERM.SEND_MESSAGES |
-  PERM.READ_MESSAGE_HISTORY |
-  PERM.EMBED_LINKS |
-  PERM.MANAGE_MESSAGES |
-  PERM.MANAGE_CHANNELS |
-  PERM.MANAGE_WEBHOOKS |
-  PERM.PIN_MESSAGES
-).toString();
+/** Channel-level bot member overwrite. Never includes bits the bot does not hold. */
+export function heldPermissionsOf(guild: SimulatedGuild): bigint {
+  if (guild.live && guild.botPermissions) {
+    try {
+      return BigInt(guild.botPermissions);
+    } catch {
+      return 0n;
+    }
+  }
+  return botPermissionInteger();
+}
+
+export function botMemberAllowFor(guild: SimulatedGuild): string {
+  return botMemberAllowBits(heldPermissionsOf(guild)).toString();
+}
+
+/** @deprecated Use botMemberAllowFor(guild). Kept as the safe base (no PIN / MANAGE_MESSAGES). */
+export const BOT_MEMBER_ALLOW = botMemberAllowBits(botPermissionInteger()).toString();
+
+export function shouldRetryChannelCreateWithoutOverwrites(status: number | undefined, hadOverwrites: boolean): boolean {
+  return hadOverwrites && status === 403;
+}
+
+export function discordManagedBotRole(guild: SimulatedGuild) {
+  return guild.roles.find((r) => r.managed && r.id !== guild.id);
+}
+
+/** Presentation role.bot is not the Discord-managed integration role. Grant it to the bot member so channel overwrites for role.bot actually apply. */
+export async function ensureBotHasPresentationRole(
+  guild: SimulatedGuild,
+  roleBotId: string | undefined,
+): Promise<{ ok: boolean; warning?: string }> {
+  if (!guild.live) return { ok: true };
+  if (!roleBotId || !/^\d{17,20}$/.test(roleBotId)) return { ok: true };
+  if (!guild.botUserId || !/^\d{17,20}$/.test(guild.botUserId)) return { ok: true };
+  if (roleBotId === guild.botUserId) return { ok: true };
+  try {
+    await restApi(guild, "PUT", `/guilds/${guild.id}/members/${guild.botUserId}/roles/${roleBotId}`);
+    return { ok: true };
+  } catch (err) {
+    const e = err as Error & { status?: number; body?: string };
+    return {
+      ok: false,
+      warning: `bot presentation role ${roleBotId} ${e.status ?? ""} ${e.message}${e.body ? ` ${e.body}` : ""}`.trim().slice(0, 240),
+    };
+  }
+}
 
 export async function ensureBotChannelAccess(
   guild: SimulatedGuild,
@@ -157,10 +197,11 @@ export async function ensureBotChannelAccess(
   if (!guild.botUserId || !/^\d{17,20}$/.test(guild.botUserId)) {
     return { ok: false, warning: "bot user id missing" };
   }
+  const allow = botMemberAllowFor(guild);
   try {
     await restApi(guild, "PUT", `/channels/${channelId}/permissions/${guild.botUserId}`, {
       type: 1,
-      allow: BOT_MEMBER_ALLOW,
+      allow,
       deny: "0",
     });
     const ch = guild.channelById(channelId);
@@ -169,7 +210,7 @@ export async function ensureBotChannelAccess(
       try {
         await restApi(guild, "PUT", `/channels/${parent}/permissions/${guild.botUserId}`, {
           type: 1,
-          allow: BOT_MEMBER_ALLOW,
+          allow,
           deny: "0",
         });
       } catch {
@@ -353,7 +394,7 @@ export class DiscordRestGuild extends SimulatedGuild {
     permission_overwrites?: Overwrite[];
   }): Promise<SimChannel> {
     const name = discordTransportName(body.name, body.type);
-    const raw = await this.api<Record<string, unknown>>("POST", `/guilds/${this.id}/channels`, {
+    const payload: Record<string, unknown> = {
       name,
       type: body.type,
       parent_id: body.parent_id ?? undefined,
@@ -361,7 +402,19 @@ export class DiscordRestGuild extends SimulatedGuild {
       position: body.position,
       rate_limit_per_user: body.type === 0 ? body.rate_limit_per_user ?? 0 : undefined,
       permission_overwrites: body.permission_overwrites,
-    });
+    };
+    let raw: Record<string, unknown>;
+    try {
+      raw = await this.api<Record<string, unknown>>("POST", `/guilds/${this.id}/channels`, payload);
+    } catch (err) {
+      const e = err as Error & { status?: number };
+      if (shouldRetryChannelCreateWithoutOverwrites(e.status, Boolean(body.permission_overwrites?.length))) {
+        const { permission_overwrites: _ow, ...rest } = payload;
+        raw = await this.api<Record<string, unknown>>("POST", `/guilds/${this.id}/channels`, rest);
+      } else {
+        throw err;
+      }
+    }
     const ch = mapChannel(raw);
     this.channels.push(ch);
     return ch;

@@ -19,7 +19,9 @@
 
 ## Discord permissions
 
-Blueprint `never_administrator: true`. Invite integer `295011699728` (derived from `BOT_PERM_NAMES`; never Administrator). Missing access is fixed with **channel overwrites** (VIEW, SEND, READ_HISTORY, EMBED_LINKS, MANAGE_MESSAGES, PIN_MESSAGES as needed), not Administrator.
+Blueprint `never_administrator: true`. Invite integer `295011699728` (derived from `BOT_PERM_NAMES`; never Administrator). Missing **view/send** access is fixed with **channel overwrites** and by granting presentation `role.bot` to the bot member — not Administrator.
+
+A bot cannot ALLOW bits it does not hold. PIN_MESSAGES and MANAGE_MESSAGES are **not** in the invite integer. Putting them on a channel overwrite 403s (50013). Sticky pins are an owner-side integer decision, not an overwrite trick.
 
 An earlier published figure `294851834304` was a transcription error. It omitted View Channel, Send Messages, Manage Channels, Manage Roles, and Connect. If the scratch bot was invited with that URL, re-invite with `295011699728`. Do not keep Administrator.
 

@@ -2,6 +2,28 @@
 
 Engineering log for https://github.com/MMGSaint/mortis-field-network. Simulator-proven unless marked live.
 
+## 2026-08-28 — live scratch integration (token in memory)
+
+Scratch guild `1540022458126700674` Connected. Gateway READY. Administrator false. Guild-held bits include canonical `295011699728` (excess CREATE_INSTANT_INVITE, ATTACH_FILES, SPEAK — warn only).
+
+Live findings and engine fixes:
+
+- **403/50001 overwrite warnings** were Missing Access on initiate+ channels, not PIN_MESSAGES in the member overwrite. Cause: the bot member held only the Discord-managed integration role (`1540061175230763022`). Overwrites targeted presentation `role.bot` (`1540075592135868447`), which the bot did not have. Category member overwrites do not apply to unsynced children. Apply now PUTs presentation `role.bot` onto the bot member (Manage Roles, role below bot). Overwrite sweep then 0 failures.
+- **Plan 5 creates / 1 update** was internally correct (HOW TO BEGIN, REFERENCE, WORLD ACCESS webhook, slowmode). Applied. REFERENCE first POST with overwrites 403'd; create-without-overwrites retry then adopt. S62.
+- **Sticky pins 403/50013** on every PUT pin. Bot holds neither PIN_MESSAGES (`1<<51`) nor MANAGE_MESSAGES. Channel overwrites cannot grant unheld bits. Buttons and template posts still work unpinned. `refreshPins` / apply no longer duplicate when the template is already in the channel (`already_unpinned`). S63, S66.
+- **`/ticket` 400 50035** — Discord forbids a required option after an optional one. Category and body are both required. S45.
+- **guild.system_channel PATCH 403 50013** — needs Manage Server, not in the integer. Documented; do not add.
+- **HOW TO BEGIN / REFERENCE** landed at the bottom of their categories (late create, no sibling-order plan). Plan now detects sibling order (not absolute Discord position integers). Apply PATCHes order. Live ARRIVAL is NOTICE → HOW TO BEGIN → CONDUCT AND TERMS → ENTRY. NETWORK is NOTICES → REFERENCE → NETWORK STATUS → OPEN CHANNEL → QUESTIONS. S65.
+- Health `pin.unpinnable` when a template exists but PIN_MESSAGES is not held (not `pin.missing`). S64. Overwrite sweep skips roles/webhooks (those 404'd as Unknown Channel). S67.
+- Bot member overwrite bits are masked to held permissions (no PIN/MANAGE_MESSAGES unless held). S59–S61.
+- Tests T1–T9 + S1–S67 PASS (simulator). Live Accept/Intake/tickets/dispatch/lockdown/retract/drift-repair/gateway READY exercised on scratch.
+
+Owner-only Discord config (do not reinvite, do not add Administrator):
+
+- Sticky pins require adding PIN_MESSAGES or MANAGE_MESSAGES to the invite integer, or pinning by a human. Not done this pass.
+- Public Bot is on; Developer Portal `install_params` still `7347005485008037`. Independent of this guild's held bits.
+- Excess CREATE_INSTANT_INVITE / ATTACH_FILES / SPEAK on the combined @everyone+bot integer.
+
 ## 2026-08-27 — live scratch integration (tokenless path)
 
 - Token is still not in this environment (never env/git/Drive/chat). Re-authorizing the bot in Discord does not put the token in process memory. Connect remains the Provision password field.

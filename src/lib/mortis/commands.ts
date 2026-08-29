@@ -23,12 +23,13 @@ export function commandPayloads(bp: Blueprint): SlashCommandPayload[] {
       type: 1,
     };
     if (c.name === "ticket") {
+      // Discord requires required options before optional ones.
       base.options = [
         {
           name: "category",
           description: "Ticket category",
           type: 3,
-          required: false,
+          required: true,
           choices: [
             { name: "general", value: "general" },
             { name: "report", value: "report" },

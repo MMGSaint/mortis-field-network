@@ -18,6 +18,7 @@ import { Route as SecurityRouteImport } from './routes/security'
 import { Route as TestsRouteImport } from './routes/tests'
 import { Route as TicketsRouteImport } from './routes/tickets'
 import { Route as ApiInteractionsRouteImport } from './routes/api/interactions'
+import { Route as ApiLocalOpRouteImport } from './routes/api/local-op'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -65,6 +66,11 @@ const ApiInteractionsRoute = ApiInteractionsRouteImport.update({
   path: '/api/interactions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLocalOpRoute = ApiLocalOpRouteImport.update({
+  id: '/api/local-op',
+  path: '/api/local-op',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/tests': typeof TestsRoute
   '/tickets': typeof TicketsRoute
   '/api/interactions': typeof ApiInteractionsRoute
+  '/api/local-op': typeof ApiLocalOpRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -93,6 +100,7 @@ export interface FileRoutesByTo {
   '/tests': typeof TestsRoute
   '/tickets': typeof TicketsRoute
   '/api/interactions': typeof ApiInteractionsRoute
+  '/api/local-op': typeof ApiLocalOpRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -106,6 +114,7 @@ export interface FileRoutesById {
   '/tests': typeof TestsRoute
   '/tickets': typeof TicketsRoute
   '/api/interactions': typeof ApiInteractionsRoute
+  '/api/local-op': typeof ApiLocalOpRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -120,6 +129,7 @@ export interface FileRouteTypes {
     | '/tests'
     | '/tickets'
     | '/api/interactions'
+    | '/api/local-op'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
     | '/tests'
     | '/tickets'
     | '/api/interactions'
+    | '/api/local-op'
     | '/api/auth/$'
   id:
     | '__root__'
@@ -144,6 +155,7 @@ export interface FileRouteTypes {
     | '/tests'
     | '/tickets'
     | '/api/interactions'
+    | '/api/local-op'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
@@ -157,6 +169,7 @@ export interface RootRouteChildren {
   TestsRoute: typeof TestsRoute
   TicketsRoute: typeof TicketsRoute
   ApiInteractionsRoute: typeof ApiInteractionsRoute
+  ApiLocalOpRoute: typeof ApiLocalOpRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -225,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInteractionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/local-op': {
+      id: '/api/local-op'
+      path: '/api/local-op'
+      fullPath: '/api/local-op'
+      preLoaderRoute: typeof ApiLocalOpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -245,6 +265,7 @@ const rootRouteChildren: RootRouteChildren = {
   TestsRoute: TestsRoute,
   TicketsRoute: TicketsRoute,
   ApiInteractionsRoute: ApiInteractionsRoute,
+  ApiLocalOpRoute: ApiLocalOpRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

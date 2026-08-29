@@ -14,7 +14,7 @@ In Grok Build the preview starts via `startup.sh`.
 
 ## Tests
 
-Engine: `npm run test:engine` (T1–T9, S1–S53).  
+Engine: `npm run test:engine` (T1–T9, S1–S67).  
 Workstation Tests page also runs the suite and the first-player walkthrough (isolated runtime — it does not Apply the operator guild).
 
 ## Provisioning

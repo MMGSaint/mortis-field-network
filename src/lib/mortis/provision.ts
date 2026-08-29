@@ -5,7 +5,7 @@ import { withBackoff } from "./discord-sim.ts";
 import type { SimulatedGuild } from "./discord-sim.ts";
 import type { EnvoyStore } from "./store.ts";
 import type { Blueprint, Plan, PlanOp } from "./types.ts";
-import { discordTransportName, saveScratchState, attachCurrentRestMethods, restApi, ensureBotChannelAccess } from "./discord-rest.ts";
+import { discordTransportName, saveScratchState, attachCurrentRestMethods, restApi, ensureBotChannelAccess, heldPermissionsOf, botMemberAllowFor, discordManagedBotRole, ensureBotHasPresentationRole } from "./discord-rest.ts";
 import { registerGuildCommands } from "./commands.ts";
 
 export type ApplyOptions = {
@@ -59,6 +59,8 @@ export async function plan(bp: Blueprint, store: EnvoyStore, guild: SimulatedGui
     }
   }
 
+  const orderDrift = categoryOrderDriftKeys(bp, store, guild);
+
   for (const ch of bp.channels) {
     const id = store.blueprintState.get(ch.key);
     const want = expectedName(guild, ch.display, "channel", ch.kind);
@@ -71,6 +73,7 @@ export async function plan(bp: Blueprint, store: EnvoyStore, guild: SimulatedGui
         if (live.name !== want) changes.push(`name:${live.name}->${want}`);
         if ((live.topic ?? "") !== (ch.topic ?? "") && ch.kind === "text") changes.push("topic");
         if (live.rate_limit_per_user !== ch.slowmode && ch.kind === "text") changes.push("slowmode");
+        if (orderDrift.has(ch.key)) changes.push("order");
         ops.push(changes.length ? { op: "update", kind: "channel", key: ch.key, snowflake: id, changes } : { op: "noop", key: ch.key });
       }
     }
@@ -110,6 +113,76 @@ export async function plan(bp: Blueprint, store: EnvoyStore, guild: SimulatedGui
   };
 }
 
+export function siblingChannelKeys(bp: Blueprint, categoryKey: string): string[] {
+  return bp.channels.filter((c) => c.category === categoryKey).map((c) => c.key);
+}
+
+export function channelSiblingIndex(bp: Blueprint, key: string): number {
+  const ch = bp.channels.find((c) => c.key === key);
+  if (!ch) return 0;
+  const idx = siblingChannelKeys(bp, ch.category).indexOf(key);
+  return idx < 0 ? 0 : idx;
+}
+
+/** Blueprint-array order vs live position among siblings. Absolute Discord position integers are not compared. */
+export function categoryOrderDriftKeys(bp: Blueprint, store: EnvoyStore, guild: SimulatedGuild): Set<string> {
+  const drifted = new Set<string>();
+  for (const cat of bp.categories) {
+    const keys = siblingChannelKeys(bp, cat.key);
+    const bound = keys
+      .map((key) => {
+        const id = store.blueprintState.get(key);
+        const live = id ? guild.channelById(id) : undefined;
+        return live ? { key, id: live.id, position: live.position } : null;
+      })
+      .filter((row): row is { key: string; id: string; position: number } => Boolean(row));
+    if (bound.length < 2) continue;
+    const liveOrder = [...bound].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)).map((r) => r.key);
+    const wantOrder = bound.map((r) => r.key);
+    if (liveOrder.join("|") !== wantOrder.join("|")) {
+      for (const row of bound) drifted.add(row.key);
+    }
+  }
+  return drifted;
+}
+
+/** Channels and categories only — never roles or webhook bindings. */
+export function overwriteSweepTargets(bp: Blueprint, store: EnvoyStore): Array<{ id: string; key: string }> {
+  const out: Array<{ id: string; key: string }> = [];
+  for (const cat of bp.categories) {
+    const id = store.blueprintState.get(cat.key);
+    if (id) out.push({ id, key: cat.key });
+  }
+  for (const ch of bp.channels) {
+    const id = store.blueprintState.get(ch.key);
+    if (id) out.push({ id, key: ch.key });
+  }
+  return out;
+}
+
+async function findExistingTemplatePost(
+  guild: SimulatedGuild,
+  liveId: string,
+): Promise<{ id: string; pinned?: boolean } | undefined> {
+  const live = guild.channelById(liveId);
+  const pinned = live?.messages.find((m) => m.pinned);
+  if (pinned) return pinned;
+  const ours = live?.messages.find((m) => m.author_id === guild.botUserId || m.author_id === "webhook");
+  if (ours) return ours;
+  if (!guild.live) return undefined;
+  try {
+    const recent = await restApi<unknown>(guild, "GET", `/channels/${liveId}/messages?limit=25`);
+    const rows: Array<Record<string, unknown>> = Array.isArray(recent) ? (recent as Array<Record<string, unknown>>) : [];
+    const mapped = rows.map((m) => {
+      const author = (m.author as Record<string, unknown> | undefined) ?? {};
+      return { id: String(m.id), author_id: String(author.id ?? ""), pinned: Boolean(m.pinned) };
+    });
+    return mapped.find((m) => m.pinned) ?? mapped.find((m) => m.author_id === guild.botUserId);
+  } catch {
+    return undefined;
+  }
+}
+
 function staffRoleIds(store: EnvoyStore, bp: Blueprint): string[] {
   return bp.roles.filter((r) => r.tier === "staff").map((r) => store.blueprintState.get(r.key)).filter(Boolean) as string[];
 }
@@ -145,7 +218,8 @@ async function tolerate403<T>(
     return await withBackoff(fn);
   } catch (err) {
     if (isDiscord400or403(err) || isDiscord403(err)) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const e = err as Error & { body?: string };
+      const msg = `${e.message ?? String(err)}${e.body ? ` ${e.body}` : ""}`.slice(0, 400);
       warnings.push(`${label}: ${msg} (continuing)`);
       store.appendAudit({
         actor,
@@ -170,6 +244,7 @@ export function overwritesFor(
   attachmentsRestricted: boolean | undefined,
   showLocked?: boolean,
 ) {
+  const held = heldPermissionsOf(guild);
   const ows = generateOverwrites({
     guildId: guild.id,
     audience,
@@ -177,6 +252,7 @@ export function overwritesFor(
     readonly,
     attachmentsRestricted,
     showLockedCategory: showLocked,
+    heldPermissions: held,
     roleSnowflakes: {
       everyone: guild.id,
       initiate: store.blueprintState.get("role.initiate") ?? "missing",
@@ -186,17 +262,13 @@ export function overwritesFor(
     },
   });
   // Presentation role.bot is not the Discord-managed bot role. Always grant the live bot member
-  // so later PATCH/webhook calls do not 403 Missing Access.
+  // so later PATCH/webhook calls do not 403 Missing Access. Only bits the bot actually holds.
   if (guild.botUserId && !ows.some((o) => o.id === guild.botUserId)) {
-    const allow =
-      PERM.VIEW_CHANNEL |
-      PERM.SEND_MESSAGES |
-      PERM.READ_MESSAGE_HISTORY |
-      PERM.MANAGE_CHANNELS |
-      PERM.MANAGE_WEBHOOKS |
-      PERM.CONNECT |
-      PERM.EMBED_LINKS;
-    ows.push({ id: guild.botUserId, type: 1, allow: allow.toString(), deny: "0" });
+    ows.push({ id: guild.botUserId, type: 1, allow: botMemberAllowFor(guild), deny: "0" });
+  }
+  const managed = discordManagedBotRole(guild);
+  if (managed && !ows.some((o) => o.id === managed.id)) {
+    ows.push({ id: managed.id, type: 0, allow: botMemberAllowFor(guild), deny: "0" });
   }
   return ows;
 }
@@ -336,6 +408,9 @@ export async function apply(
     }
   }
 
+  const botRoleGrant = await ensureBotHasPresentationRole(guild, store.blueprintState.get("role.bot"));
+  if (!botRoleGrant.ok && botRoleGrant.warning) warnings.push(botRoleGrant.warning);
+
   // Categories
   for (const cat of [...bp.categories].sort((a, b) => a.position - b.position)) {
     const ow = overwritesFor(bp, store, guild, cat.audience, "category", true, false, cat.show_locked);
@@ -375,6 +450,7 @@ export async function apply(
           type,
           parent_id: parent,
           topic: ch.topic,
+          position: channelSiblingIndex(bp, ch.key),
           rate_limit_per_user: ch.slowmode,
           permission_overwrites: ow,
         }),
@@ -390,6 +466,7 @@ export async function apply(
           name: ch.display,
           topic: ch.topic,
           parent_id: parent,
+          position: channelSiblingIndex(bp, ch.key),
           rate_limit_per_user: ch.slowmode,
         }),
       );
@@ -418,13 +495,19 @@ export async function apply(
     await tolerate403("guild.system_channel", warnings, store, actor, () => guild.patchGuild({ system_channel_id: sys }));
   }
 
-  // Pinned template posts go through the choke point.
+  // Pinned template posts go through the choke point. Never duplicate when the
+  // template is already in the channel — sticky pin may 403 without PIN_MESSAGES.
   for (const ch of bp.channels) {
     if (!ch.pin_template) continue;
     const liveId = store.blueprintState.get(ch.key);
-    const live = liveId ? guild.channelById(liveId) : undefined;
-    const already = live?.messages.some((m) => m.pinned);
-    if (already) continue;
+    if (!liveId) continue;
+    const existing = await findExistingTemplatePost(guild, liveId);
+    if (existing) {
+      if (!existing.pinned) {
+        await tolerate403(`pin:${ch.key}`, warnings, store, actor, () => guild.pinMessage(liveId, existing.id));
+      }
+      continue;
+    }
     const result = await dispatchSend(
       { channel_key: ch.key, template_key: ch.pin_template, fields: {}, caller: { type: "owner-cli" } },
       { bp, store, guild },
@@ -562,7 +645,39 @@ export async function refreshPins(
     }
 
     const hasButtons = (m: { components?: unknown }) => JSON.stringify(m.components ?? "").includes(ids[0] ?? "___");
-    const ours = pins.find((m) => m.author_id === guild.botUserId || m.author_id === "webhook" || m.author_id === "") ?? pins[0];
+    let ours: { id: string; author_id: string; components?: unknown } | undefined =
+      pins.find((m) => m.author_id === guild.botUserId || m.author_id === "webhook" || m.author_id === "") ?? pins[0];
+
+    if (!ours) {
+      try {
+        const recent = guild.live
+          ? await restApi<unknown>(guild, "GET", `/channels/${liveId}/messages?limit=25`)
+          : (guild.channelById(liveId)?.messages ?? []);
+        const rowsMsg: Array<Record<string, unknown>> = Array.isArray(recent) ? (recent as Array<Record<string, unknown>>) : [];
+        const mapped = guild.live
+          ? rowsMsg.map((m) => {
+              const author = (m.author as Record<string, unknown> | undefined) ?? {};
+              return {
+                id: String(m.id),
+                author_id: String(author.id ?? ""),
+                components: m.components,
+              };
+            })
+          : (recent as Array<{ id: string; author_id: string; components?: unknown }>);
+        ours =
+          mapped.find((m) => hasButtons(m) && (m.author_id === guild.botUserId || !guild.live)) ??
+          mapped.find((m) => hasButtons(m)) ??
+          mapped.find((m) => m.author_id === guild.botUserId);
+      } catch (err) {
+        const e = err as Error & { body?: string };
+        store.appendAudit({
+          actor,
+          action: "provision.pin_refresh",
+          target: ch.key,
+          details: { action: "listMessages_failed", error: `${e.message}${e.body ? ` ${e.body}` : ""}` },
+        });
+      }
+    }
 
     const stampComponents = async (messageId: string): Promise<{ ok: boolean; n: number; reason?: string }> => {
       if (!guild.live) {
@@ -582,7 +697,20 @@ export async function refreshPins(
     };
 
     if (ours && hasButtons(ours)) {
-      out.push({ key: ch.key, action: "already", ok: true, message_id: ours.id });
+      try {
+        if (guild.live) await restApi(guild, "PUT", `/channels/${liveId}/pins/${ours.id}`);
+        else await guild.pinMessage(liveId, ours.id);
+        out.push({ key: ch.key, action: "already", ok: true, message_id: ours.id });
+      } catch (err) {
+        const e = err as Error & { body?: string };
+        out.push({
+          key: ch.key,
+          action: "already_unpinned",
+          ok: true,
+          message_id: ours.id,
+          reason: `pin 403/denied — message left in channel, not duplicated. ${e.message}${e.body ? ` ${e.body}` : ""}`.slice(0, 240),
+        });
+      }
       continue;
     }
 

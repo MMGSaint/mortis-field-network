@@ -204,7 +204,27 @@
     [
       "staff.inbox.webhook",
       "1540087719546458199"
+    ],
+    [
+      "arrival.guide",
+      "1543074687255449621"
+    ],
+    [
+      "arrival.guide.webhook",
+      "1543074690765955122"
+    ],
+    [
+      "community.vrchat.webhook",
+      "1543074692250992660"
+    ],
+    [
+      "network.reference",
+      "1543075114499973240"
+    ],
+    [
+      "network.reference.webhook",
+      "1543075372394876970"
     ]
   ],
-  "lastAppliedHash": "ca21f0cdbbde846ea2f556c44101a0bc269886abb24c626a43117bdbca10452f"
+  "lastAppliedHash": "4823dcdb3f9e3c7263d1379b920cf580f7868f45ab5dc481d7e639c58f6bc939"
 }
