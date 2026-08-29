@@ -27,6 +27,7 @@ import { startTestableGateway } from "./discord-gateway.ts";
 import type { EnvoyContext } from "./envoy.ts";
 import { setNotificationPreference, getNotificationPreferences, memberOptedIn, DEFAULT_PREFERENCES } from "./notifications.ts";
 import { scheduleOperationalNotice, runDueScheduledNotices, cancelScheduledNotice, listScheduledNotices, OPERATIONAL_KINDS } from "./scheduler.ts";
+import { runOperationalTick, resetHoldFingerprintsForTest } from "./operations.ts";
 
 export type TestResult = { id: string; name: string; pass: boolean; detail: string };
 
@@ -1978,6 +1979,91 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S80", "FAQ text carries no restricted terms or dev vocabulary", clean, `clean=${clean}`);
   } catch (e) {
     push("S80", "FAQ text carries no restricted terms or dev vocabulary", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S81 — operational tick fires due notices and debounces repeat health HOLDs.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    resetHoldFingerprintsForTest(rt);
+    const past = new Date(Date.now() - 30_000).toISOString();
+    rt.scheduleNotice({ at: past, kind: "outage", fields: { status: "test" } });
+    // Force a health HOLD by unbinding a required channel.
+    const arrivalId = rt.store.blueprintState.get("arrival.notice");
+    if (arrivalId) rt.store.blueprintState.delete("arrival.notice");
+    const tick1 = await rt.runOperationalTick(new Date());
+    const tick2 = await rt.runOperationalTick(new Date());
+    const holdAudits1 = rt.store.audit.filter((a) => a.action === "operations.health.hold").length;
+    const tickAudits = rt.store.audit.filter((a) => a.action === "operations.tick").length;
+    const pass =
+      tick1.scheduled.length === 1 &&
+      tick2.scheduled.length === 0 &&
+      tick1.health.newHolds.length >= 1 &&
+      tick2.health.newHolds.length === 0 &&
+      holdAudits1 === tick1.health.newHolds.length &&
+      tickAudits === 2;
+    push(
+      "S81",
+      "Operations tick fires due notices, alerts new HOLDs, and debounces repeats",
+      pass,
+      `t1.sched=${tick1.scheduled.length} t2.sched=${tick2.scheduled.length} t1.newHolds=${tick1.health.newHolds.length} t2.newHolds=${tick2.health.newHolds.length} tickRows=${tickAudits}`,
+    );
+    if (arrivalId) rt.store.blueprintState.set("arrival.notice", arrivalId);
+  } catch (e) {
+    push("S81", "Operations tick fires due notices, alerts new HOLDs, and debounces repeats", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S82 — operational tick cannot fire a scheduled row for a NARRATIVE-classed template.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    resetHoldFingerprintsForTest(rt);
+    // Craft a scheduled row directly bypassing scheduleOperationalNotice's
+    // narrative refusal, then swap the template class to NARRATIVE. The tick
+    // must still refuse it at dispatch time — visibility check step 2.
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const id = rt.store.nextId("sched");
+    rt.store.scheduledNotices.push({
+      id,
+      at: past,
+      kind: "maintenance",
+      fields: {},
+      created_by: "test",
+      created_at: new Date().toISOString(),
+      status: "pending",
+      audit_id: "test",
+    });
+    const swap = rt.bp.templates.find((t) => t.key === "tpl.ops.maintenance");
+    const original = swap?.class;
+    if (swap) swap.class = "NARRATIVE";
+    const tick = await rt.runOperationalTick(new Date());
+    if (swap && original !== undefined) swap.class = original;
+    else if (swap) delete (swap as { class?: unknown }).class;
+    const row = rt.listScheduledNotices().find((r) => r.id === id);
+    const pass = tick.scheduled.length === 1 && tick.scheduled[0]!.result.ok === false && row?.status === "failed";
+    push(
+      "S82",
+      "Operations tick refuses NARRATIVE-classed template even for pre-enqueued rows",
+      pass,
+      `ran=${tick.scheduled.length} ok=${tick.scheduled[0]?.result.ok} rowStatus=${row?.status}`,
+    );
+  } catch (e) {
+    push("S82", "Operations tick refuses NARRATIVE-classed template even for pre-enqueued rows", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S83 — operations.ts writes to player-facing channels only via dispatch.send.
+  try {
+    const src = readFileSync(join(cwd, "src/lib/mortis/operations.ts"), "utf8");
+    const bad = /guild\.postMessage|discordDeliver\(/.test(src);
+    const usesDispatchChain = /runDueScheduledNotices|postOperationalNotice|dispatch/.test(src);
+    push(
+      "S83",
+      "Operations module never calls guild.postMessage or discordDeliver directly",
+      !bad && usesDispatchChain,
+      `bad=${bad} chain=${usesDispatchChain}`,
+    );
+  } catch (e) {
+    push("S83", "Operations module never calls guild.postMessage or discordDeliver directly", false, e instanceof Error ? e.message : String(e));
   }
 
   // S78 — scheduler + notices operational-kind maps stay in step.

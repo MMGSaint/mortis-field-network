@@ -25,6 +25,7 @@ import {
   type NotificationPreferences,
 } from "./notifications.ts";
 import { scheduleOperationalNotice, cancelScheduledNotice, listScheduledNotices, runDueScheduledNotices, type ScheduledNotice } from "./scheduler.ts";
+import { runOperationalTick, type OperationalTickReport } from "./operations.ts";
 
 export type RuntimeSnapshot = {
   guildName: string;
@@ -453,6 +454,11 @@ export class MortisRuntime {
 
   async runDueScheduledNotices(now: Date = new Date()) {
     return runDueScheduledNotices(this, now);
+  }
+
+  /** S81 — one operational tick: fire due notices + alert on new health HOLDs. */
+  async runOperationalTick(now: Date = new Date()): Promise<OperationalTickReport> {
+    return runOperationalTick(this, now);
   }
 
   hasLiveToken(): boolean {
