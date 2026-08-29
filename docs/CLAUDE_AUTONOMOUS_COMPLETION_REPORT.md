@@ -210,6 +210,27 @@ Secret handling (regressions **S89**, **S91**, **S92**):
 
 ---
 
+## 5a. CI finding — `main` has never been green
+
+Every `push` run of `.github/workflows/engine.yml` on `main` (runs 1–7) has
+**failed**, from the repository's first CI run onward. Cause:
+
+```
+npm error Missing: ajv@6.15.0 from lock file
+npm error Missing: json-schema-traverse@0.4.1 from lock file
+```
+
+`npm ci` requires `package-lock.json` to be in sync with `package.json`, and the
+lockfile committed on `main` is missing transitive dependencies. It also still
+carried the name `app-builder-workspace` rather than `mortis-field-network`.
+
+This is already fixed on this branch — the lockfile was regenerated in the first
+commit — which is why the branch's PR runs (8–11) are all `success`, including
+run #11 on the current HEAD. **Merging this branch turns `main`'s CI green for
+the first time.** No workflow change was needed beyond adding `npm run build`.
+
+---
+
 ## 6. Test results
 
 ```
