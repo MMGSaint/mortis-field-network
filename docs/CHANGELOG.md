@@ -2,6 +2,24 @@
 
 Engineering log for https://github.com/MMGSaint/mortis-field-network. Simulator-proven unless marked live.
 
+## 2026-08-29 — S79–S88: /faq, /notifications, operational tick, chaos, security sweep
+
+Continuation of the same pass. Simulator only; no live scratch attach this pass.
+
+- **S79 — /faq slash command.** Player-facing FAQ ephemeral. Optional `topic` picks a single entry (`start` / `communication` / `conduct` / `tickets` / `accessibility` / `world` / `notifications` / `help`); with no topic it prints the full list. Copy lives in `src/lib/mortis/faq.ts` so REFERENCE and the slash command stay in step. Walkthrough exercises both full and topic paths.
+- **S79 also — /notifications slash command.** Toggles a member's per-category preference from Discord itself. Routes through the S73 `setNotificationPreference`, so intake gating and audit behaviour are shared. Player-safe copy on pre-intake / unknown-member.
+- **S80 — FAQ text carries no restricted terms or dev vocabulary.**
+- **S81 — safe operational tick** (`src/lib/mortis/operations.ts`). One entry point runs due scheduled notices + assesses health + audits *new* HOLDs (debounced by `{code, target}` signature). Cleared HOLDs are forgotten so a recurrence alerts again. Never touches player-facing channels except via `dispatch.send`. Never auto-repairs drift. Never restarts the gateway (S71/S72's job). Never posts NARRATIVE.
+- **S82 — tick refuses NARRATIVE at fire time**, catching a template-class flip between enqueue and fire (defense in depth on top of S74).
+- **S83 — operations.ts never calls `guild.postMessage` or `discordDeliver` directly**.
+- **S84 — gateway fatal close codes** (4004/4010/4011/4012/4013/4014) **stop the loop** and do not schedule reconnects.
+- **S85 — scheduler.enqueue does not silently dedupe** repeated requests — operator sees N rows and can cancel.
+- **S86 — notification prefs are member-scoped and independent of lockdown** (nothing gates prefs behind lockdown; intake gating still applies).
+- **S87 — SECURITY: no bot tokens, webhook URL+token pairs, or private keys in the git-tracked source tree** (scans src/, blueprint/, docs/, workers/).
+- **S88 — SECURITY: new modules carry no restricted terms or dev vocabulary**.
+
+Full suite: **T1–T9 + S1–S88 = 97/97 PASS** (`npm run test:engine`, `npm run typecheck`, `npm run build`). Invariants preserved: dispatch is the sole player-facing choke point; NARRATIVE requires ENACTED; zero canon introduced; never Administrator; production Discord never touched; no secrets in git.
+
 ## 2026-08-29 — S70–S78: allowlist, gateway hardening, prefs, scheduler (simulator only)
 
 Baseline was `d963914` (T1–T9 + S1–S69). The purported Fable pass-2 bundle (`84a4824`, S70–S74) is not present in this environment — no bundle, no patch, no branch, no local commit — so it was re-implemented from the roadmap rather than "recovered". The new work is SIMULATOR-verified only; no live scratch attach happened this pass (token would have to reach the operator's Provision password field, which cannot be done autonomously).

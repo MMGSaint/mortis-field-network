@@ -25,15 +25,25 @@ All simulator-verified; no live scratch attach happened this pass.
 
 | ID | Feature | Files |
 |---|---|---|
-| S70 | Live-attach guild allowlist; refuses non-scratch ids **before** hydrate or token use; refusal is audited | `src/lib/mortis/allowlist.ts`, `runtime.ts` |
+| S70 | Live-attach guild allowlist; refuses non-scratch ids **before** hydrate or token use; refusal is audited | `allowlist.ts`, `runtime.ts` |
 | S71 | Gateway heartbeat-ACK tracking + zombie reconnect (close 4000) | `discord-gateway.ts` |
-| S72 | OP7 graceful close-and-RESUME; OP9 honors `resumable`; one guarded reconnect scheduler suppresses duplicate timers under close+op7+op9+error races; Discord fatal codes (4004/4010–4014) stop the loop | `discord-gateway.ts` |
+| S72 | OP7 graceful close-and-RESUME; OP9 honors `resumable`; one guarded reconnect scheduler suppresses duplicate timers under close+op7+op9+error races | `discord-gateway.ts` |
 | S73 | Per-member notification preferences (`notice` / `dispatches` / `tickets_own`), reversible, intake-gated, audited | `notifications.ts`, `store.ts`, `runtime.ts` |
 | S74 | Operational-only scheduler; refuses non-operational kinds, narrative-shaped kind labels, and (defense in depth) templates flagged `class === "NARRATIVE"` even under an operational label; delivery goes through `dispatch.send` | `scheduler.ts`, `runtime.ts` |
 | S75 | Scheduler skips cancelled and future rows | test only |
 | S76 | Allowlist runtime additions are reversible; scratch never dropped | test only |
 | S77 | Notification preferences refuse unknown/pre-intake members | test only |
 | S78 | Scheduler operational-kind allowlist stays in step with `notices.ts` map (drift guard) | test only |
+| S79 | /faq slash command + /notifications slash command; walkthrough exercises both | `faq.ts`, `commands.ts`, `envoy.ts`, `walkthrough.ts`, `blueprint/guild.json` |
+| S80 | FAQ text carries no restricted terms or dev vocabulary | test only |
+| S81 | Safe operational tick — fires due notices, alerts new HOLDs, debounces repeats | `operations.ts`, `runtime.ts` |
+| S82 | Tick refuses NARRATIVE at fire time (template class flip caught) | test only |
+| S83 | Operations module never calls `guild.postMessage` or `discordDeliver` directly | test only |
+| S84 | Gateway fatal close codes (4004/4010–4014) stop the loop, no reconnect | `discord-gateway.ts` |
+| S85 | Scheduler enqueue does not silently dedupe repeated requests | test only |
+| S86 | Notification prefs are member-scoped and independent of lockdown | test only |
+| S87 | SECURITY: no bot tokens, webhook URL+token pairs, or private keys in git | test only |
+| S88 | SECURITY: new modules carry no restricted terms or dev vocabulary | test only |
 
 ## Test results
 
@@ -43,7 +53,7 @@ npm run test:engine PASS
 npm run build       PASS  (Vite + Nitro output regenerated, PGLite migration no-op)
 ```
 
-Individual results: **T1–T9 + S1–S78 = 87/87 PASS**.
+Individual results: **T1–T9 + S1–S88 = 97/97 PASS**.
 
 ## Invariants preserved
 

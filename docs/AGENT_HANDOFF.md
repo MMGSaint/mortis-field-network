@@ -13,7 +13,7 @@ Phase 1 Field Network engine + Phase 2 player-safe UX are implemented. GitHub is
 
 - Transport default: simulator. Live REST + gateway exist; attach only after operator Connect (token in Provision password field → WeakMap).
 - Scratch guild `1540022458126700674` **live-applied through 2026-08-28**. Bindings in `data/scratch-guild-state.json` (snowflakes only). lastAppliedHash `4823dcdb…`.
-- Engine tests: T1–T9 + S1–S78 PASS (simulator, 87 total). S70–S78 are SIMULATOR-verified only — this pass added the allowlist, gateway zombie/OP7/OP9 hardening, notification preferences, and the operational-only scheduler. No live scratch attach happened this pass; live re-verification of S70–S78 is owner-side (paste token on Provision).
+- Engine tests: T1–T9 + S1–S88 PASS (simulator, 97 total). S70–S88 are SIMULATOR-verified only — this pass added the allowlist, gateway zombie/OP7/OP9/fatal-code hardening, notification preferences, operational-only scheduler, safe operational tick, /faq and /notifications slash commands, and a secret/canon security sweep. No live scratch attach happened this pass; live re-verification is owner-side (paste token on Provision).
 - Live this process: Connect, Validate, Plan (0 creates / 0 updates), Apply no-op, Accept/Intake/Initiate, HOW TO BEGIN / REFERENCE / WORLD ACCESS, tickets (general/report/appeal/accessibility), dispatch+retract, notices, lockdown+lift, overwrite sweep 0 failures, gateway READY, slash commands registered, duplicate templates cleaned, pin refresh `already_unpinned` (403/50013).
 - Production Discord: **untouched**.
 - Phase 3 Operations Room: **not opened**.
@@ -78,7 +78,7 @@ Token: **not in this repo**. Rotate if it was ever pasted in chat.
 3. If live Discord is disconnected, continue only work that does not need the token. Connect is Provision password field → WeakMap.
 4. Remaining owner-only Discord config: PIN_MESSAGES if sticky pins are required; Public Bot off; Developer Portal install_params; Community Safety Setup. Do not add Administrator. Do not reinvite unless Connect proves missing required bits.
 5. If you find a defect, reproduce in the simulator first, add a test, then fix.
-6. S70–S78 landed this pass in the simulator. Live re-verify when the operator can Connect: attach refusal for a non-scratch id must fire before hydrate; the gateway must survive a ZOMBIE / OP7 / OP9 round without stacking timers; notification preferences must round-trip; the scheduler must refuse a NARRATIVE-classed template even under an operational kind label.
+6. S70–S88 landed this pass in the simulator. Live re-verify when the operator can Connect: attach refusal for a non-scratch id must fire before hydrate; the gateway must survive a ZOMBIE / OP7 / OP9 round without stacking timers; fatal close codes must stop the loop; notification preferences must round-trip via /notifications; the scheduler must refuse a NARRATIVE-classed template even under an operational kind label; /faq must return player-safe copy; runOperationalTick must fire due scheduled notices without touching production.
 
 ## Owner-only (cannot be done by an agent)
 

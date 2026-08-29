@@ -2066,6 +2066,158 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S83", "Operations module never calls guild.postMessage or discordDeliver directly", false, e instanceof Error ? e.message : String(e));
   }
 
+  // S84 — gateway fatal close codes (4004/4010/4011/4012/4013/4014) stop the loop
+  // and do NOT schedule a reconnect. This prevents infinite failed reconnects
+  // on unrecoverable identify / intent / API errors.
+  try {
+    let listeners: Record<string, Array<(ev: unknown) => void>> = { open: [], message: [], close: [], error: [] };
+    class FakeWs {
+      readyState = 1;
+      addEventListener(k: string, fn: (ev: unknown) => void) {
+        (listeners[k] ??= []).push(fn);
+      }
+      send() {
+        /* */
+      }
+      close() {
+        this.readyState = 3;
+      }
+    }
+    const scheduled: number[] = [];
+    const gw = startTestableGateway({
+      token: "test",
+      ctx: () => ({} as unknown as EnvoyContext),
+      handle: async () => new Response("{}"),
+      wsFactory: () => new FakeWs() as unknown as WebSocket,
+      setTimer: (_fn, ms) => {
+        scheduled.push(ms);
+        return {} as unknown as ReturnType<typeof setTimeout>;
+      },
+      clearTimer: () => undefined,
+    });
+    await new Promise((r) => setImmediate(r));
+    // Simulate Discord fatal: authentication failed
+    for (const fn of listeners.close ?? []) fn({ code: 4004, reason: "authentication failed" });
+    // And a follow-up fatal — sharding required
+    for (const fn of listeners.close ?? []) fn({ code: 4011, reason: "sharding required" });
+    gw.stop();
+    const pass = scheduled.length === 0;
+    push("S84", "Gateway fatal close codes stop the loop and do not schedule a reconnect", pass, `scheduled=${scheduled.length}`);
+  } catch (e) {
+    push("S84", "Gateway fatal close codes stop the loop and do not schedule a reconnect", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S85 — repeated scheduler.enqueue of the same content stores separate rows.
+  // The scheduler does not silently dedupe — the operator sees N rows and can
+  // cancel unwanted duplicates.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const at = new Date(Date.now() - 5_000).toISOString();
+    const a = rt.scheduleNotice({ at, kind: "outage", fields: {} });
+    const b = rt.scheduleNotice({ at, kind: "outage", fields: {} });
+    const c = rt.scheduleNotice({ at, kind: "outage", fields: {} });
+    const listed = rt.listScheduledNotices();
+    const pass = a.ok && b.ok && c.ok && listed.filter((r) => r.status === "pending").length === 3 && new Set([a.ok && a.id, b.ok && b.id, c.ok && c.id]).size === 3;
+    push("S85", "Scheduler enqueue does not silently dedupe repeated requests", pass, `pending=${listed.filter((r) => r.status === "pending").length}`);
+  } catch (e) {
+    push("S85", "Scheduler enqueue does not silently dedupe repeated requests", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S86 — /notifications interaction is refused when arrival is under lockdown
+  // and the caller is not yet an initiate. Symmetric to the intake block.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    // Even without lockdown, an un-intake member cannot set preferences.
+    const bare = rt.setNotificationPreference({ snowflake: "u1", channel: "notice", enabled: false });
+    // With lockdown, initiate members can still set preferences (nothing gates prefs behind lockdown).
+    await rt.intake({ snowflake: "u2", handle: "u2", callsign: "Kite" });
+    rt.store.lockdown = true;
+    const okLocked = rt.setNotificationPreference({ snowflake: "u2", channel: "notice", enabled: false });
+    rt.store.lockdown = false;
+    const pass = bare.ok === false && okLocked.ok === true;
+    push("S86", "Notification prefs are member-scoped and independent of lockdown", pass, `bare=${bare.ok} okLocked=${okLocked.ok}`);
+  } catch (e) {
+    push("S86", "Notification prefs are member-scoped and independent of lockdown", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S87 — SECURITY: no bot tokens or webhook URL+token pairs anywhere in the git-tracked source tree.
+  try {
+    const paths = [
+      "src/lib/mortis",
+      "src/routes",
+      "src/lib/auth",
+      "blueprint",
+      "docs",
+      "workers",
+    ];
+    const bad: string[] = [];
+    const walk = async (p: string): Promise<string[]> => {
+      const { readdirSync, statSync } = await import("node:fs");
+      const out: string[] = [];
+      try {
+        for (const entry of readdirSync(join(cwd, p))) {
+          const full = join(p, entry);
+          const st = statSync(join(cwd, full));
+          if (st.isDirectory()) out.push(...(await walk(full)));
+          else out.push(full);
+        }
+      } catch {
+        /* missing path is fine — nothing to scan */
+      }
+      return out;
+    };
+    const patterns: Array<{ label: string; rx: RegExp }> = [
+      // Bot token shape: three base64 segments, first is 20+ chars (application id or user id encoded).
+      { label: "bot-token", rx: /Bot [A-Za-z0-9._-]{50,}/ },
+      // Webhook URL with a token appended.
+      { label: "webhook-token-pair", rx: /discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-Za-z0-9._-]{60,}/ },
+      // Private key (only shape).
+      { label: "priv-key", rx: /-----BEGIN\s+(?:RSA\s+)?PRIVATE KEY-----/ },
+    ];
+    for (const dir of paths) {
+      for (const file of await walk(dir)) {
+        if (/\.(png|jpe?g|gif|ico|woff2?|ttf|otf|bin|pdf)$/i.test(file)) continue;
+        try {
+          const content = readFileSync(join(cwd, file), "utf8");
+          for (const p of patterns) {
+            if (p.rx.test(content)) bad.push(`${file}:${p.label}`);
+          }
+        } catch {
+          /* unreadable file — skip */
+        }
+      }
+    }
+    push("S87", "No bot tokens, webhook URL+token pairs, or private keys in git-tracked source", bad.length === 0, `hits=${bad.length}${bad.length ? ` :: ${bad.slice(0, 5).join(",")}` : ""}`);
+  } catch (e) {
+    push("S87", "No bot tokens, webhook URL+token pairs, or private keys in git-tracked source", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S88 — SECURITY: new modules stay zero-canon (no restricted terms).
+  try {
+    const newFiles = [
+      "src/lib/mortis/allowlist.ts",
+      "src/lib/mortis/notifications.ts",
+      "src/lib/mortis/scheduler.ts",
+      "src/lib/mortis/operations.ts",
+      "src/lib/mortis/faq.ts",
+    ];
+    const restricted = /Season 3|Ashwright|True Name|Wraith|Warden's Vault|MCA-|MIN-|CANON-/i;
+    const hits: string[] = [];
+    for (const f of newFiles) {
+      try {
+        const src = readFileSync(join(cwd, f), "utf8");
+        if (restricted.test(src)) hits.push(f);
+      } catch {
+        hits.push(`${f}:MISSING`);
+      }
+    }
+    push("S88", "New modules carry no restricted terms or dev vocabulary", hits.length === 0, `hits=${hits.join(",")}`);
+  } catch (e) {
+    push("S88", "New modules carry no restricted terms or dev vocabulary", false, e instanceof Error ? e.message : String(e));
+  }
+
   // S78 — scheduler + notices operational-kind maps stay in step.
   try {
     const { default: _u } = { default: undefined };
