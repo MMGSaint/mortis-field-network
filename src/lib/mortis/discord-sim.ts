@@ -55,6 +55,8 @@ export class SimulatedGuild {
   explicit_content_filter = 0;
   preferred_locale = "en-US";
   system_channel_id: string | null = null;
+  /** Guild owner snowflake — populated on live hydrate (S94). */
+  ownerId: string | null = null;
   roles: SimRole[] = [];
   channels: SimChannel[] = [];
   members = new Map<string, SimMember>();

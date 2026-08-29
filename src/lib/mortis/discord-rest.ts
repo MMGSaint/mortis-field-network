@@ -19,6 +19,8 @@ const tokens = new WeakMap<DiscordRestGuild, string>();
 export type LiveIdentity = {
   guildId: string;
   guildName: string;
+  /** Discord guild owner snowflake. Authoritative staff seed source (S94). */
+  ownerId: string | null;
   memberCount: number | null;
   channelCount: number;
   roleCount: number;
@@ -59,11 +61,43 @@ export function loadScratchState(guildId: string): ScratchStateFile | null {
 
 export function saveScratchState(state: ScratchStateFile): void {
   mkdirSync(dirname(STATE_FILE), { recursive: true });
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  // Trailing newline keeps the file POSIX-clean so a live run does not show
+  // up as a one-line diff every time it rebinds identical snowflakes.
+  writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Longest a single REST call will block on a 429 before giving up and
+ * surfacing the required wait to the caller. Buckets longer than this
+ * (channel name/topic PATCH is 2 per 10 minutes) are an operational
+ * scheduling problem, not something to spin on inside one request.
+ */
+export const MAX_RETRY_SLEEP_MS = 30_000;
+
+/**
+ * Resolve how long Discord wants us to wait, in milliseconds.
+ *
+ * The JSON body carries `retry_after` as fractional SECONDS and is more
+ * precise than the header, so it wins when both are present. The header is
+ * also seconds. Returns 0 when neither is parseable.
+ */
+export function retryAfterMs(header: string | null, body: string): number {
+  let fromBody = NaN;
+  try {
+    const parsed = JSON.parse(body) as { retry_after?: unknown };
+    if (typeof parsed.retry_after === "number") fromBody = parsed.retry_after;
+    else if (typeof parsed.retry_after === "string") fromBody = Number(parsed.retry_after);
+  } catch {
+    /* not JSON — fall back to the header */
+  }
+  const fromHeader = header === null ? NaN : Number(header);
+  const seconds = Number.isFinite(fromBody) ? fromBody : fromHeader;
+  if (!Number.isFinite(seconds) || seconds < 0) return 0;
+  return Math.round(seconds * 1000);
 }
 
 function mapRole(raw: Record<string, unknown>): SimRole {
@@ -262,14 +296,24 @@ export class DiscordRestGuild extends SimulatedGuild {
       if (res.status === 429) {
         const text = await res.text();
         const kind = classifyDiscordHttp(429, text);
-        lastErr = Object.assign(new Error(`discord ${method} ${path} 429${kind === "blocked" ? " blocked" : ""}`), {
-          status: 429,
-          body: text.slice(0, 400),
-          kind,
-        });
+        const waitMs = retryAfterMs(res.headers.get("retry-after"), text);
+        lastErr = Object.assign(
+          new Error(
+            `discord ${method} ${path} 429${kind === "blocked" ? " blocked" : ""}` +
+              (waitMs > 0 ? ` retry_after=${Math.round(waitMs / 1000)}s` : ""),
+          ),
+          { status: 429, body: text.slice(0, 400), kind, retryAfterMs: waitMs },
+        );
         if (kind === "blocked") throw lastErr;
-        const retry = Number(res.headers.get("retry-after") ?? "1");
-        await sleep(Math.min(Math.max(retry, 0.25) * 1000, 8000));
+        // Some Discord buckets are far longer than a request should ever
+        // block for — channel name/topic PATCH is 2 per 10 minutes, so
+        // retry_after can be several hundred seconds. Blindly sleeping the
+        // old 8s cap and retrying 8 times could never satisfy that bucket:
+        // it just burned the remaining quota and then failed anyway. Fail
+        // fast instead and hand the caller the real wait so a scheduler or
+        // operator can decide, rather than pretending the request is broken.
+        if (waitMs > MAX_RETRY_SLEEP_MS) throw lastErr;
+        await sleep(Math.max(waitMs, 250));
         continue;
       }
       if (res.status === 204) return {} as T;
@@ -315,6 +359,7 @@ export class DiscordRestGuild extends SimulatedGuild {
     this.explicit_content_filter = Number(guild.explicit_content_filter ?? 0);
     this.preferred_locale = String(guild.preferred_locale ?? "en-US");
     this.system_channel_id = guild.system_channel_id ? String(guild.system_channel_id) : null;
+    this.ownerId = guild.owner_id ? String(guild.owner_id) : null;
 
     const roles = await this.api<Array<Record<string, unknown>>>("GET", `/guilds/${this.id}/roles`);
     this.roles = roles.map(mapRole);
@@ -348,6 +393,7 @@ export class DiscordRestGuild extends SimulatedGuild {
     return {
       guildId: this.id,
       guildName: this.name,
+      ownerId: this.ownerId,
       memberCount: this.memberCount,
       channelCount: this.channels.length,
       roleCount: this.roles.filter((r) => r.id !== this.id).length,

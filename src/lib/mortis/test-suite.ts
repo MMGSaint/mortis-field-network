@@ -28,6 +28,7 @@ import type { EnvoyContext } from "./envoy.ts";
 import { setNotificationPreference, getNotificationPreferences, memberOptedIn, DEFAULT_PREFERENCES } from "./notifications.ts";
 import { scheduleOperationalNotice, runDueScheduledNotices, cancelScheduledNotice, listScheduledNotices, OPERATIONAL_KINDS } from "./scheduler.ts";
 import { runOperationalTick, resetHoldFingerprintsForTest } from "./operations.ts";
+import { redactToken, seedLiveStaff, MissingLiveTokenError, attachLiveFromEnv } from "./live-session.ts";
 
 export type TestResult = { id: string; name: string; pass: boolean; detail: string };
 
@@ -2216,6 +2217,198 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S88", "New modules carry no restricted terms or dev vocabulary", hits.length === 0, `hits=${hits.join(",")}`);
   } catch (e) {
     push("S88", "New modules carry no restricted terms or dev vocabulary", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S89 — live attach is reachable programmatically, not only from the Provision UI.
+  try {
+    const cliSrc = readFileSync(join(cwd, "tools/mortis-provision/cli.mjs"), "utf8");
+    const sessionSrc = readFileSync(join(cwd, "src/lib/mortis/live-session.ts"), "utf8");
+    const cliHasLive = /--live/.test(cliSrc) && /attachLiveFromEnv/.test(cliSrc);
+    const readsEnv = /process\.env\.DISCORD_BOT_TOKEN/.test(sessionSrc);
+    // The CLI must never take the token as an argv parameter — that would put
+    // it in shell history and in the process table.
+    const noArgvToken = !/argv.*DISCORD_BOT_TOKEN|--token/.test(cliSrc);
+    const exportsAttach = typeof attachLiveFromEnv === "function";
+    push(
+      "S89",
+      "Live attach is invokable from the CLI without the Provision UI",
+      cliHasLive && readsEnv && noArgvToken && exportsAttach,
+      `cliLive=${cliHasLive} readsEnv=${readsEnv} noArgvToken=${noArgvToken} exported=${exportsAttach}`,
+    );
+  } catch (e) {
+    push("S89", "Live attach is invokable from the CLI without the Provision UI", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S90 — the acceptance harness labels simulator runs SIMULATED, never LIVE.
+  try {
+    const rt = await fresh(cwd);
+    const { runLiveAcceptance } = await import("./live-acceptance.ts");
+    // Ask for live even though the runtime is a simulator — it must refuse to
+    // claim LIVE. A simulator pass must never be mistakable for live proof.
+    const report = await runLiveAcceptance(rt, { live: true });
+    const allSimulated = report.results.every((r) => r.mode === "SIMULATED");
+    const noLeftoverLockdown = rt.store.lockdown === false;
+    push(
+      "S90",
+      "Acceptance harness never labels a simulator run LIVE and always lifts lockdown",
+      report.mode === "SIMULATED" && allSimulated && noLeftoverLockdown,
+      `mode=${report.mode} allSimulated=${allSimulated} lockdownCleared=${noLeftoverLockdown} pass=${report.summary.pass}/${report.summary.total}`,
+    );
+  } catch (e) {
+    push("S90", "Acceptance harness never labels a simulator run LIVE and always lifts lockdown", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S91 — SECURITY: redactToken scrubs the credential out of arbitrary text.
+  try {
+    const fake = "MTIzNDU2Nzg5MDEyMzQ1Njc4.Gabcde.THIS-IS-A-FAKE-TEST-TOKEN-VALUE";
+    const body = `discord 401 {"message":"401: Unauthorized","token":"${fake}"} retry with Bot ${fake}`;
+    const scrubbed = redactToken(body, fake);
+    const clean = !scrubbed.includes(fake) && scrubbed.includes("[REDACTED]");
+    let threw = false;
+    const saved = process.env.DISCORD_BOT_TOKEN;
+    delete process.env.DISCORD_BOT_TOKEN;
+    try {
+      await attachLiveFromEnv({ cwd: mkdtempSync(join(tmpdir(), "mortis-notoken-")) });
+    } catch (err) {
+      threw = err instanceof MissingLiveTokenError || /DISCORD_BOT_TOKEN is not set/.test((err as Error).message);
+    }
+    if (saved !== undefined) process.env.DISCORD_BOT_TOKEN = saved;
+    push(
+      "S91",
+      "Token redaction scrubs credentials and a missing token fails closed",
+      clean && threw,
+      `scrubbed=${clean} missingTokenThrows=${threw}`,
+    );
+  } catch (e) {
+    push("S91", "Token redaction scrubs credentials and a missing token fails closed", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S92 — SECURITY: the live-session module never writes the token anywhere.
+  try {
+    const src = readFileSync(join(cwd, "src/lib/mortis/live-session.ts"), "utf8");
+    const writesFile = /writeFileSync|appendFileSync|createWriteStream/.test(src);
+    const logsToken = /console\.(log|error|warn)\([^)]*token/i.test(src);
+    // The token must never be placed in an audit row either.
+    const auditsToken = /appendAudit\([^)]*token/is.test(src);
+    push(
+      "S92",
+      "live-session never writes, logs, or audits the bot token",
+      !writesFile && !logsToken && !auditsToken,
+      `writesFile=${writesFile} logsToken=${logsToken} auditsToken=${auditsToken}`,
+    );
+  } catch (e) {
+    push("S92", "live-session never writes, logs, or audits the bot token", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S93 — REGRESSION (live defect): the ticket post path fails CLOSED when no
+  // blueprint is supplied. Previously claimTicket/closeTicket had an else-branch
+  // that called guild.postMessage directly, skipping isBlueprintPlayerChannel
+  // entirely whenever the optional `bp` argument was omitted.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const ticketsSrc = readFileSync(join(cwd, "src/lib/mortis/tickets.ts"), "utf8");
+    // No raw postMessage may remain outside the guarded helper.
+    const rawPosts = (ticketsSrc.match(/guild\.postMessage\(/g) ?? []).length;
+    const guardedHelperPosts = 2; // the two inside postTicketChannel
+    const noUnguarded = rawPosts === guardedHelperPosts;
+
+    // Behavioural half: point a ticket row at a blueprint player-facing channel
+    // and claim WITHOUT a blueprint. It must refuse rather than post.
+    const t = await createTicket({ opener: "s93_opener", handle: "s93", category: "general", body: "probe" }, rt);
+    const playerChannelId = rt.store.blueprintState.get("network.status")!;
+    const row = rt.store.tickets.get(t.id)!;
+    row.channel_snowflake = playerChannelId;
+    const before = rt.guild.channelById(playerChannelId)!.messages.length;
+    let refused = false;
+    try {
+      await claimTicket(rt.store, t.id, "owner_1", rt.guild /* bp intentionally omitted */);
+    } catch (err) {
+      refused = /ticket path refused/.test((err as Error).message);
+    }
+    const after = rt.guild.channelById(playerChannelId)!.messages.length;
+    push(
+      "S93",
+      "Ticket post path fails closed to player-facing channels even without a blueprint",
+      noUnguarded && refused && after === before,
+      `rawPosts=${rawPosts} refused=${refused} msgs ${before}->${after}`,
+    );
+  } catch (e) {
+    push("S93", "Ticket post path fails closed to player-facing channels even without a blueprint", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S94 — REGRESSION (live defect): live attach seeds the staff table with REAL
+  // snowflakes. Previously only the placeholders owner_1/ops_1 were seeded, so a
+  // real Discord staff member arriving over the gateway was always unauthorized
+  // and live ticket claim/close was impossible.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    rt.store.staff.clear();
+    const ownerSnowflake = "426833958391644162";
+    const savedOps = process.env.DISCORD_OPERATOR_IDS;
+    process.env.DISCORD_OPERATOR_IDS = "111111111111111111, not-a-snowflake ,222222222222222222";
+    const { seeded } = seedLiveStaff(rt, { ownerId: ownerSnowflake });
+    if (savedOps === undefined) delete process.env.DISCORD_OPERATOR_IDS;
+    else process.env.DISCORD_OPERATOR_IDS = savedOps;
+
+    const ownerSeeded = rt.store.staff.get(ownerSnowflake);
+    const opSeeded = rt.store.staff.get("111111111111111111");
+    const junkRejected = ![...rt.store.staff.keys()].some((k) => !/^\d{17,20}$/.test(k));
+    // The seeded owner must actually be able to claim a ticket.
+    const t = await createTicket({ opener: "s94_opener", handle: "s94", category: "general", body: "probe" }, rt);
+    let claimed = false;
+    try {
+      await claimTicket(rt.store, t.id, ownerSnowflake, rt.guild, rt.bp);
+      claimed = rt.store.tickets.get(t.id)?.status === "claimed";
+    } catch {
+      claimed = false;
+    }
+    // A non-seeded snowflake must still be refused.
+    const t2 = await createTicket({ opener: "s94_opener_b", handle: "s94b", category: "general", body: "probe" }, rt);
+    let strangerRefused = false;
+    try {
+      await claimTicket(rt.store, t2.id, "999999999999999999", rt.guild, rt.bp);
+    } catch (err) {
+      strangerRefused = /unauthorized/.test((err as Error).message);
+    }
+    const audited = rt.store.audit.some((a) => a.action === "staff.seed");
+    push(
+      "S94",
+      "Live attach seeds real staff snowflakes; junk rejected, strangers still refused",
+      Boolean(ownerSeeded?.capabilities.includes("*")) && Boolean(opSeeded) && junkRejected && claimed && strangerRefused && audited && seeded.length === 3,
+      `owner=${Boolean(ownerSeeded)} op=${Boolean(opSeeded)} junkRejected=${junkRejected} claimed=${claimed} strangerRefused=${strangerRefused} audited=${audited} seeded=${seeded.length}`,
+    );
+  } catch (e) {
+    push("S94", "Live attach seeds real staff snowflakes; junk rejected, strangers still refused", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S95 — REGRESSION (live defect): 429 retry_after is honoured from the JSON
+  // body, and a bucket longer than MAX_RETRY_SLEEP_MS fails fast instead of
+  // burning 8 blind retries. Discord's channel name/topic PATCH bucket is
+  // 2 requests per 10 minutes, so retry_after is routinely 300-600s; the old
+  // code capped the sleep at 8s and could never satisfy it.
+  try {
+    const { retryAfterMs, MAX_RETRY_SLEEP_MS } = await import("./discord-rest.ts");
+    const bodyWins = retryAfterMs("1", JSON.stringify({ retry_after: 421.4, global: false })) === 421400;
+    const headerFallback = retryAfterMs("7", "not json") === 7000;
+    const stringBody = retryAfterMs(null, JSON.stringify({ retry_after: "12.5" })) === 12500;
+    const neither = retryAfterMs(null, "not json") === 0;
+    const negative = retryAfterMs("-5", "not json") === 0;
+    const longBucketExceedsCap = retryAfterMs(null, JSON.stringify({ retry_after: 600 })) > MAX_RETRY_SLEEP_MS;
+    const shortBucketUnderCap = retryAfterMs(null, JSON.stringify({ retry_after: 1.5 })) < MAX_RETRY_SLEEP_MS;
+    // The source must actually fail fast rather than sleep-and-continue.
+    const src = readFileSync(join(cwd, "src/lib/mortis/discord-rest.ts"), "utf8");
+    const failsFast = /if \(waitMs > MAX_RETRY_SLEEP_MS\) throw lastErr;/.test(src);
+    const noOldCap = !/Math\.min\(Math\.max\(retry, 0\.25\) \* 1000, 8000\)/.test(src);
+    push(
+      "S95",
+      "429 retry_after is parsed from the body and long buckets fail fast",
+      bodyWins && headerFallback && stringBody && neither && negative && longBucketExceedsCap && shortBucketUnderCap && failsFast && noOldCap,
+      `bodyWins=${bodyWins} header=${headerFallback} strBody=${stringBody} neither=${neither} neg=${negative} longFailsFast=${failsFast} oldCapGone=${noOldCap}`,
+    );
+  } catch (e) {
+    push("S95", "429 retry_after is parsed from the body and long buckets fail fast", false, e instanceof Error ? e.message : String(e));
   }
 
   // S78 — scheduler + notices operational-kind maps stay in step.
