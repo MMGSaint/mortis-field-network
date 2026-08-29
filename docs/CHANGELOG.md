@@ -2,6 +2,22 @@
 
 Engineering log for https://github.com/MMGSaint/mortis-field-network. Simulator-proven unless marked live.
 
+## 2026-08-29 — S70–S78: allowlist, gateway hardening, prefs, scheduler (simulator only)
+
+Baseline was `d963914` (T1–T9 + S1–S69). The purported Fable pass-2 bundle (`84a4824`, S70–S74) is not present in this environment — no bundle, no patch, no branch, no local commit — so it was re-implemented from the roadmap rather than "recovered". The new work is SIMULATOR-verified only; no live scratch attach happened this pass (token would have to reach the operator's Provision password field, which cannot be done autonomously).
+
+- **S70 — live-attach guild allowlist.** `src/lib/mortis/allowlist.ts`. `attachLive` refuses any guild id not on the scratch allowlist **before** hydrate or any use of the bot token. Scratch `1540022458126700674` is the only pre-approved id. Runtime additions are per-process only and reversible. Refusal is audited (`discord.connect.refused`).
+- **S71 — gateway zombie detection.** `discord-gateway.ts` now tracks heartbeat ACKs and, when the last heartbeat is unacknowledged before the next tick, closes with 4000 and reconnects. `zombieResets` visible on `GatewayStatus`.
+- **S72 — OP7 reconnect + duplicate-timer dedup.** OP7 triggers a graceful close-and-RESUME. OP9 honors `resumable`. All reconnect scheduling now flows through one guarded scheduler that suppresses stacked timers when close+op7+op9+error races overlap (`duplicateReconnectSuppressed` counter). Discord fatal close codes (4004/4010–4014) stop the loop instead of respawning.
+- **S73 — notification preferences.** `notifications.ts`. Per-member reversible opt-in/opt-out for `notice`, `dispatches`, `tickets_own`. Only settable after intake complete. Every change audited (`notifications.preference.set`, reversible flag).
+- **S74 — operational-only scheduler.** `scheduler.ts`. Enqueues `{at, kind, fields}` and runs due rows through `postOperationalNotice` → `dispatch.send`. Refuses any non-operational kind, any narrative-shaped kind, and (defense in depth) any template with `class === "NARRATIVE"` — smuggling a NARRATIVE body through an operational label is refused with reason `narrative template refused`.
+- **S75 — scheduler skips cancelled and future rows.**
+- **S76 — allowlist runtime additions do not persist across clear; scratch always allowed.**
+- **S77 — notification preferences refuse unknown members and pre-intake members.**
+- **S78 — scheduler operational-kind allowlist matches `notices.ts` map** (guards drift between the two).
+
+Full suite: **T1–T9 + S1–S78 = 87/87 PASS** (`npm run test:engine`, `npm run typecheck`, `npm run build`). Zero live Discord traffic. Zero canon introduced. Dispatch remains the sole player-facing send choke point. Never Administrator. Never production.
+
 ## 2026-08-29 — live continuation: template dedupe + pin.unpinnable
 
 Live scratch still Connected (gateway READY, Administrator false, missingBits []). Apply is a no-op. Tickets (all four categories), dispatch, retract, intake, overwrite sweep, slash `/orient` `/ticket` `/post` `/lockdown` re-verified.

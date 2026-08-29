@@ -1,6 +1,15 @@
 /**
  * Gateway interaction listener. INTERACTION_CREATE needs no privileged intents.
  * Scratch sandbox is not a stable Discord HTTP endpoint, so we ACK over REST.
+ *
+ * S71 — heartbeat ACK tracking. Missing ACK before the next heartbeat is a
+ * zombie: close with 4000 and reconnect. RESUME with session_id+seq if we
+ * had one, otherwise fresh identify.
+ *
+ * S72 — OP7 (Reconnect) triggers a graceful close-and-RESUME. OP9 (invalid
+ * session) triggers a fresh identify, honoring the resumable flag. Every
+ * reconnect scheduling goes through one guarded scheduler that prevents
+ * duplicate timers when close+op7+op9+error races overlap.
  */
 import type { EnvoyContext } from "./envoy.ts";
 
@@ -13,6 +22,14 @@ export type GatewayStatus = {
   sessionId?: string;
   lastEvent?: string;
   lastError?: string;
+  /** S71 — last heartbeat ACK count for observability. */
+  ackCount?: number;
+  /** S71 — number of zombie detections since start. */
+  zombieResets?: number;
+  /** S72 — number of RESUME attempts since start. */
+  resumeAttempts?: number;
+  /** S72 — how many duplicate reconnect timers have been suppressed. */
+  duplicateReconnectSuppressed?: number;
 };
 
 type Packet = { op: number; t?: string | null; s?: number | null; d?: Record<string, unknown> | null };
@@ -27,18 +44,60 @@ export function startInteractionGateway(opts: {
   ctx: () => EnvoyContext;
   handle: (payload: Record<string, unknown>, ctx: EnvoyContext) => Promise<Response>;
 }): { stop: () => void; status: () => GatewayStatus } {
+  return startGatewayInternal(opts);
+}
+
+/** Internal entry point — exported for test injection via {@link startTestableGateway}. */
+export function startGatewayInternal(opts: {
+  token: string;
+  ctx: () => EnvoyContext;
+  handle: (payload: Record<string, unknown>, ctx: EnvoyContext) => Promise<Response>;
+  wsFactory?: () => WebSocket;
+  /** Only used by tests — inject a fake timer. */
+  setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimer?: (t: ReturnType<typeof setTimeout>) => void;
+}): { stop: () => void; status: () => GatewayStatus } {
   let ws: WebSocket | null = null;
   let hb: ReturnType<typeof setInterval> | null = null;
   let seq: number | null = null;
+  let sessionId: string | undefined;
   let stopped = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let attempt = 0;
-  const st: GatewayStatus = { connected: false, lastEvent: "starting" };
+  // S71 — heartbeat ACK bookkeeping.
+  let lastHeartbeatAt = 0;
+  let lastAckAt = 0;
+  let ackCount = 0;
+  let zombieResets = 0;
+  let resumeAttempts = 0;
+  let duplicateReconnectSuppressed = 0;
+  const setTimer = opts.setTimer ?? setTimeout;
+  const clearTimer = opts.clearTimer ?? clearTimeout;
+
+  const st: GatewayStatus = {
+    connected: false,
+    lastEvent: "starting",
+    ackCount,
+    zombieResets,
+    resumeAttempts,
+    duplicateReconnectSuppressed,
+  };
+
+  const syncStats = () => {
+    st.ackCount = ackCount;
+    st.zombieResets = zombieResets;
+    st.resumeAttempts = resumeAttempts;
+    st.duplicateReconnectSuppressed = duplicateReconnectSuppressed;
+  };
 
   const stop = () => {
     stopped = true;
     if (hb) clearInterval(hb);
-    if (reconnectTimer) clearTimeout(reconnectTimer);
+    hb = null;
+    if (reconnectTimer) {
+      clearTimer(reconnectTimer);
+      reconnectTimer = null;
+    }
     try {
       ws?.close(1000);
     } catch {
@@ -86,47 +145,147 @@ export function startInteractionGateway(opts: {
     }
   };
 
+  /**
+   * S72 — one guarded reconnect scheduler. If a timer is already pending, the
+   * caller's request is ignored and the suppression is counted. Races between
+   * close, op9, op7, and error handlers no longer stack timers.
+   */
+  const scheduleReconnect = (delayMs: number) => {
+    if (stopped) return;
+    if (reconnectTimer) {
+      duplicateReconnectSuppressed += 1;
+      syncStats();
+      return;
+    }
+    reconnectTimer = setTimer(() => {
+      reconnectTimer = null;
+      connect();
+    }, delayMs);
+  };
+
+  /** Drop the socket in a way that always leaves ws null and hb cleared. */
+  const teardownSocket = () => {
+    if (hb) clearInterval(hb);
+    hb = null;
+    try {
+      ws?.close(4000);
+    } catch {
+      /* */
+    }
+    ws = null;
+    st.connected = false;
+  };
+
+  /** S71 — the heartbeat tick. If the last heartbeat had no ACK, treat as zombie. */
+  const heartbeatTick = () => {
+    if (lastHeartbeatAt > 0 && lastAckAt < lastHeartbeatAt) {
+      // Zombie: last heartbeat unacknowledged. Reset and reconnect.
+      zombieResets += 1;
+      st.lastError = "heartbeat ack missing (zombie)";
+      syncStats();
+      teardownSocket();
+      if (!stopped) {
+        attempt += 1;
+        scheduleReconnect(Math.min(1500 * attempt, 15000));
+      }
+      return;
+    }
+    lastHeartbeatAt = nowMs();
+    send({ op: 1, d: seq });
+  };
+
+  /** Slim wrapper so tests can stub `Date.now()`. */
+  const nowMs = (): number => {
+    try {
+      return Date.now();
+    } catch {
+      return 0;
+    }
+  };
+
   const onPacket = async (msg: Packet) => {
     if (typeof msg.s === "number") seq = msg.s;
     st.lastEvent = `op${msg.op}${msg.t ? `:${msg.t}` : ""}`;
     if (msg.op === 10) {
       const interval = Number(msg.d?.heartbeat_interval ?? 41250);
       if (hb) clearInterval(hb);
+      // Reset ACK counters and send the first heartbeat immediately.
+      lastAckAt = nowMs();
+      lastHeartbeatAt = nowMs();
       send({ op: 1, d: seq });
-      hb = setInterval(() => send({ op: 1, d: seq }), interval);
-      send({
-        op: 2,
-        d: {
-          token: opts.token,
-          intents: 0,
-          compress: false,
-          properties: { os: "linux", browser: "mortis-envoy", device: "mortis-envoy" },
-        },
-      });
+      hb = setInterval(heartbeatTick, interval);
+      // If we already have a session, RESUME instead of identifying fresh.
+      if (sessionId && seq !== null) {
+        resumeAttempts += 1;
+        syncStats();
+        send({
+          op: 6,
+          d: { token: opts.token, session_id: sessionId, seq },
+        });
+      } else {
+        send({
+          op: 2,
+          d: {
+            token: opts.token,
+            intents: 0,
+            compress: false,
+            properties: { os: "linux", browser: "mortis-envoy", device: "mortis-envoy" },
+          },
+        });
+      }
       st.lastError = undefined;
       return;
     }
+    if (msg.op === 11) {
+      // Heartbeat ACK.
+      lastAckAt = nowMs();
+      ackCount += 1;
+      syncStats();
+      return;
+    }
+    if (msg.op === 1) {
+      // Server-side heartbeat request.
+      send({ op: 1, d: seq });
+      return;
+    }
+    if (msg.op === 7) {
+      // Reconnect: close and RESUME.
+      st.lastError = "reconnect requested (op 7)";
+      teardownSocket();
+      if (!stopped) {
+        // Do not reset seq/sessionId — they are needed for RESUME.
+        attempt += 1;
+        scheduleReconnect(Math.min(1500 * attempt, 5000));
+      }
+      return;
+    }
     if (msg.op === 9) {
+      // Invalid session. `d` is a boolean — true means resumable.
+      const resumable = Boolean(msg.d);
       st.lastError = "identify rejected (op 9)";
       st.connected = false;
-      st.sessionId = undefined;
-      seq = null;
-      try {
-        ws?.close(1000);
-      } catch {
-        /* */
+      if (!resumable) {
+        sessionId = undefined;
+        seq = null;
       }
-      ws = null;
+      teardownSocket();
       if (!stopped) {
         attempt += 1;
-        reconnectTimer = setTimeout(connect, Math.min(3000 * attempt, 15000));
+        scheduleReconnect(Math.min(3000 * attempt, 15000));
       }
       return;
     }
     if (msg.op === 0 && msg.t === "READY") {
       st.connected = true;
       st.lastError = undefined;
-      st.sessionId = String(msg.d?.session_id ?? "");
+      sessionId = String(msg.d?.session_id ?? "");
+      st.sessionId = sessionId;
+      attempt = 0;
+      return;
+    }
+    if (msg.op === 0 && msg.t === "RESUMED") {
+      st.connected = true;
+      st.lastError = undefined;
       attempt = 0;
       return;
     }
@@ -172,17 +331,18 @@ export function startInteractionGateway(opts: {
 
   const connect = () => {
     if (stopped) return;
-    const Impl = globalThis.WebSocket;
-    if (!Impl) {
-      st.lastError = "WebSocket constructor missing";
-      reconnectTimer = setTimeout(connect, 4000);
-      return;
-    }
+    const impl = opts.wsFactory
+      ? opts.wsFactory
+      : () => {
+          const Impl = globalThis.WebSocket;
+          if (!Impl) throw new Error("WebSocket constructor missing");
+          return new Impl(GATEWAY);
+        };
     try {
-      ws = new Impl(GATEWAY);
+      ws = impl();
     } catch (e) {
       st.lastError = e instanceof Error ? e.message : String(e);
-      reconnectTimer = setTimeout(connect, 4000);
+      scheduleReconnect(4000);
       return;
     }
     st.lastEvent = "opening";
@@ -200,12 +360,19 @@ export function startInteractionGateway(opts: {
     });
     ws.addEventListener("close", (ev) => {
       st.connected = false;
-      st.lastError = `close ${(ev as CloseEvent).code} ${(ev as CloseEvent).reason}`.trim();
+      const code = (ev as CloseEvent).code;
+      st.lastError = `close ${code} ${(ev as CloseEvent).reason}`.trim();
       if (hb) clearInterval(hb);
       hb = null;
+      // Discord codes 4004/4010/4011/4012/4013/4014 are unrecoverable.
+      const fatal = code === 4004 || code === 4010 || code === 4011 || code === 4012 || code === 4013 || code === 4014;
+      if (fatal) {
+        stopped = true;
+        return;
+      }
       if (!stopped) {
         attempt += 1;
-        reconnectTimer = setTimeout(connect, Math.min(3000 * attempt, 15000));
+        scheduleReconnect(Math.min(3000 * attempt, 15000));
       }
     });
     ws.addEventListener("error", () => {
@@ -214,5 +381,33 @@ export function startInteractionGateway(opts: {
   };
 
   setImmediate(connect);
-  return { stop, status: () => ({ ...st }) };
+  return {
+    stop,
+    status: () => {
+      syncStats();
+      return { ...st };
+    },
+  };
 }
+
+/**
+ * Testable entry point. Never talks to the real network — the caller must
+ * supply a fake WebSocket implementation. Exercises the same code path as
+ * {@link startInteractionGateway}.
+ */
+export function startTestableGateway(opts: {
+  token: string;
+  ctx: () => EnvoyContext;
+  handle: (payload: Record<string, unknown>, ctx: EnvoyContext) => Promise<Response>;
+  wsFactory: () => WebSocket;
+  setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimer?: (t: ReturnType<typeof setTimeout>) => void;
+}) {
+  return startGatewayInternal(opts);
+}
+
+/**
+ * Test-friendly packet handler that returns the produced status without
+ * network side effects. Deprecated in favour of {@link startTestableGateway}.
+ */
+export type { Packet as GatewayPacket };

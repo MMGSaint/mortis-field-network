@@ -22,6 +22,20 @@ export class EnvoyStore {
   lockdown = false;
   invitesPaused = false;
   webhookUrls = new Map<string, string>();
+  /** S73 — per-member notification preferences. */
+  notificationPreferences = new Map<string, Record<string, boolean>>();
+  /** S74 — operational-only scheduled notices (in-memory queue). */
+  scheduledNotices: Array<{
+    id: string;
+    at: string;
+    kind: string;
+    fields: Record<string, string>;
+    created_by: string;
+    created_at: string;
+    status: "pending" | "sent" | "failed" | "cancelled";
+    last_error?: string;
+    audit_id: string;
+  }> = [];
   seq = 1;
 
   nextId(prefix: string): string {

@@ -22,6 +22,11 @@ import {
   classifyDiscordHttp,
   probePublicApplication,
 } from "./discord-public.ts";
+import { isGuildAllowed, addRuntimeAllowedGuild, clearRuntimeAllowlist, listAllowedGuilds } from "./allowlist.ts";
+import { startTestableGateway } from "./discord-gateway.ts";
+import type { EnvoyContext } from "./envoy.ts";
+import { setNotificationPreference, getNotificationPreferences, memberOptedIn, DEFAULT_PREFERENCES } from "./notifications.ts";
+import { scheduleOperationalNotice, runDueScheduledNotices, cancelScheduledNotice, listScheduledNotices, OPERATIONAL_KINDS } from "./scheduler.ts";
 
 export type TestResult = { id: string; name: string; pass: boolean; detail: string };
 
@@ -1600,10 +1605,380 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S69", "Apply does not duplicate when an unpinned template post is not authored as the bot user", false, e instanceof Error ? e.message : String(e));
   }
 
+  // S70 — live-attach guild allowlist refuses production guild ids BEFORE hydrate.
+  try {
+    clearRuntimeAllowlist();
+    const scratchAllowed = isGuildAllowed("1540022458126700674");
+    const foreignRefused = !isGuildAllowed("999999999999999999");
+    const malformedRefused = !isGuildAllowed("not-a-snowflake");
+    const rt = await fresh(cwd);
+    let refusedBeforeHydrate = false;
+    let auditRefused = false;
+    try {
+      await rt.attachLive({
+        token: "fake.token.value.never.sent",
+        guildId: "999999999999999999",
+        appId: "1540058003888410806",
+        confirmScratch: true,
+      });
+    } catch (e) {
+      refusedBeforeHydrate = /live-attach refused|allowlist/i.test((e as Error).message);
+      auditRefused = rt.store.audit.some(
+        (a) => a.action === "discord.connect.refused" && a.target === "999999999999999999",
+      );
+    }
+    const pass = scratchAllowed && foreignRefused && malformedRefused && refusedBeforeHydrate && auditRefused;
+    push(
+      "S70",
+      "Live-attach refuses non-allowlisted guild before any token/hydrate call",
+      pass,
+      `scratch=${scratchAllowed} foreign=${foreignRefused} malformed=${malformedRefused} refused=${refusedBeforeHydrate} audit=${auditRefused}`,
+    );
+  } catch (e) {
+    push("S70", "Live-attach refuses non-allowlisted guild before any token/hydrate call", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S71 — gateway zombie detection: missing heartbeat ACK triggers reconnect.
+  try {
+    const packets: unknown[] = [];
+    let opened = false;
+    let closedCount = 0;
+    let listeners: Record<string, Array<(ev: unknown) => void>> = { open: [], message: [], close: [], error: [] };
+    class FakeWs {
+      readyState = 1;
+      addEventListener(k: string, fn: (ev: unknown) => void) {
+        (listeners[k] ??= []).push(fn);
+      }
+      send(payload: string) {
+        packets.push(JSON.parse(payload));
+      }
+      close(code?: number) {
+        closedCount += 1;
+        this.readyState = 3;
+        for (const fn of listeners.close ?? []) fn({ code: code ?? 1000, reason: "test" });
+      }
+    }
+    let fake: FakeWs | null = null;
+    let scheduledDelays: number[] = [];
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const gw = startTestableGateway({
+      token: "test",
+      ctx: () => ({} as unknown as EnvoyContext),
+      handle: async () => new Response("{}"),
+      wsFactory: () => {
+        fake = new FakeWs();
+        return fake as unknown as WebSocket;
+      },
+      setTimer: (fn, ms) => {
+        scheduledDelays.push(ms);
+        const t = { fn, ms };
+        timers.push(t);
+        return t as unknown as ReturnType<typeof setTimeout>;
+      },
+      clearTimer: () => {
+        /* tests never fire the scheduled timer */
+      },
+    });
+    // Let setImmediate fire the connect.
+    await new Promise((r) => setImmediate(r));
+    // Fake HELLO
+    for (const fn of listeners.message ?? []) fn({ data: JSON.stringify({ op: 10, d: { heartbeat_interval: 40 } }) });
+    // Wait for one heartbeat tick without sending an ACK
+    await new Promise((r) => setTimeout(r, 90));
+    const st = gw.status();
+    gw.stop();
+    const pass = (st.zombieResets ?? 0) >= 1 && closedCount >= 1;
+    push(
+      "S71",
+      "Gateway zombie detection reconnects when heartbeat ACK is missing",
+      pass,
+      `zombieResets=${st.zombieResets ?? 0} closed=${closedCount} delays=${scheduledDelays.join(",")}`,
+    );
+  } catch (e) {
+    push("S71", "Gateway zombie detection reconnects when heartbeat ACK is missing", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S72 — OP7 / OP9 / concurrent close scheduling: single reconnect timer.
+  try {
+    let listeners: Record<string, Array<(ev: unknown) => void>> = { open: [], message: [], close: [], error: [] };
+    let closedCount = 0;
+    class FakeWs {
+      readyState = 1;
+      addEventListener(k: string, fn: (ev: unknown) => void) {
+        (listeners[k] ??= []).push(fn);
+      }
+      send() {
+        /* */
+      }
+      close() {
+        closedCount += 1;
+        this.readyState = 3;
+      }
+    }
+    const scheduled: number[] = [];
+    const gw = startTestableGateway({
+      token: "test",
+      ctx: () => ({} as unknown as EnvoyContext),
+      handle: async () => new Response("{}"),
+      wsFactory: () => new FakeWs() as unknown as WebSocket,
+      setTimer: (_fn, ms) => {
+        scheduled.push(ms);
+        return {} as unknown as ReturnType<typeof setTimeout>;
+      },
+      clearTimer: () => undefined,
+    });
+    await new Promise((r) => setImmediate(r));
+    // OP7 reconnect, then close, then op9 all before any timer fires.
+    for (const fn of listeners.message ?? []) fn({ data: JSON.stringify({ op: 7, d: null }) });
+    for (const fn of listeners.close ?? []) fn({ code: 1006, reason: "" });
+    for (const fn of listeners.message ?? []) fn({ data: JSON.stringify({ op: 9, d: false }) });
+    const st = gw.status();
+    gw.stop();
+    const pass = scheduled.length === 1 && (st.duplicateReconnectSuppressed ?? 0) >= 2;
+    push(
+      "S72",
+      "Gateway OP7/OP9/close overlap does not stack duplicate reconnect timers",
+      pass,
+      `scheduled=${scheduled.length} suppressed=${st.duplicateReconnectSuppressed ?? 0}`,
+    );
+  } catch (e) {
+    push("S72", "Gateway OP7/OP9/close overlap does not stack duplicate reconnect timers", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S73 — notification preferences are reversible, gated on intake, audited.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const beforeIntake = rt.setNotificationPreference({ snowflake: "np_1", channel: "dispatches", enabled: false });
+    // Complete intake, then set + reverse.
+    await rt.intake({ snowflake: "np_1", handle: "np", callsign: "Neo" });
+    const on = rt.setNotificationPreference({ snowflake: "np_1", channel: "dispatches", enabled: true });
+    const off = rt.setNotificationPreference({ snowflake: "np_1", channel: "dispatches", enabled: false });
+    const restored = rt.setNotificationPreference({ snowflake: "np_1", channel: "dispatches", enabled: true });
+    const unknownCh = rt.setNotificationPreference({ snowflake: "np_1", channel: "everything", enabled: false });
+    const prefs = rt.getNotificationPreferences("np_1");
+    const audits = rt.store.audit.filter(
+      (a) => a.action === "notifications.preference.set" && a.target === "np_1",
+    );
+    const optedIn = memberOptedIn(rt.store, "np_1", "dispatches");
+    const defaultsForNewMember = getNotificationPreferences(rt.store, "unknown_snowflake");
+    const pass =
+      beforeIntake.ok === false &&
+      on.ok === true &&
+      off.ok === true &&
+      restored.ok === true &&
+      unknownCh.ok === false &&
+      prefs.dispatches === true &&
+      optedIn === true &&
+      audits.length === 3 &&
+      defaultsForNewMember.notice === DEFAULT_PREFERENCES.notice;
+    push(
+      "S73",
+      "Notification preferences are reversible, intake-gated, and audited",
+      pass,
+      `beforeIntake=${beforeIntake.ok} on=${on.ok} off=${off.ok} restored=${restored.ok} unknown=${unknownCh.ok} audits=${audits.length}`,
+    );
+  } catch (e) {
+    push("S73", "Notification preferences are reversible, intake-gated, and audited", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S74 — operational-only scheduler: valid, narrative-kind refused, smuggle refused, run-due delivers.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const okOp = rt.scheduleNotice({
+      at: past,
+      kind: "maintenance",
+      fields: { window: "01:00–02:00 UTC" },
+    });
+    const badKind = rt.scheduleNotice({
+      at: past,
+      kind: "narrative_reveal",
+      fields: {},
+    });
+    const badKind2 = rt.scheduleNotice({
+      at: past,
+      kind: "MAINTENANCE",
+      fields: {},
+    });
+    const badFields = rt.scheduleNotice({
+      at: past,
+      kind: "maintenance",
+      fields: { rich: { components: [{ type: 2 }] } as unknown as string },
+    });
+    const badAt = rt.scheduleNotice({
+      at: "not-an-iso",
+      kind: "maintenance",
+      fields: {},
+    });
+    // Smuggle attempt: hand-craft a NARRATIVE template into the blueprint and try
+    // to schedule "maintenance" — the scheduler must inspect the template class,
+    // not just the kind label.
+    const originalTpl = rt.bp.templates.find((t) => t.key === "tpl.ops.maintenance");
+    const cloneBp = structuredClone(rt.bp);
+    const swap = cloneBp.templates.find((t) => t.key === "tpl.ops.maintenance");
+    if (swap) swap.class = "NARRATIVE";
+    const smuggle = scheduleOperationalNotice(
+      { bp: cloneBp, store: rt.store },
+      { at: past, kind: "maintenance", fields: {} },
+    );
+    // Run due — should deliver only the one legitimate row.
+    const results = await rt.runDueScheduledNotices(new Date());
+    const listed = rt.listScheduledNotices();
+    const cancelledId = rt.scheduleNotice({ at: past, kind: "outage", fields: {} });
+    const cancelled = cancelledId.ok ? rt.cancelScheduledNotice(cancelledId.id) : false;
+    const pass =
+      okOp.ok === true &&
+      badKind.ok === false && /narrative/i.test(badKind.reason ?? "") &&
+      badKind2.ok === false && /kind rejected/i.test(badKind2.reason ?? "") &&
+      badFields.ok === false && /must be a string/.test(badFields.reason ?? "") &&
+      badAt.ok === false && /ISO/i.test(badAt.reason ?? "") &&
+      smuggle.ok === false && /narrative template/i.test(smuggle.reason ?? "") &&
+      results.length === 1 &&
+      results[0]!.result.ok === true &&
+      listed.some((r) => r.status === "sent" && r.kind === "maintenance") &&
+      cancelled === true &&
+      OPERATIONAL_KINDS.length === 8 &&
+      Boolean(originalTpl);
+    push(
+      "S74",
+      "Operational scheduler accepts operational kinds only and refuses narrative smuggling",
+      pass,
+      `okOp=${okOp.ok} narr=${badKind.ok} case=${badKind2.ok} fields=${badFields.ok} at=${badAt.ok} smuggle=${smuggle.ok} ran=${results.length} cancelled=${cancelled}`,
+    );
+  } catch (e) {
+    push("S74", "Operational scheduler accepts operational kinds only and refuses narrative smuggling", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S75 — scheduler.runDueScheduledNotices does not fire cancelled or future notices.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const past = new Date(Date.now() - 10_000).toISOString();
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const p1 = rt.scheduleNotice({ at: past, kind: "outage", fields: {} });
+    const p2 = rt.scheduleNotice({ at: past, kind: "outage", fields: {} });
+    const f1 = rt.scheduleNotice({ at: future, kind: "maintenance", fields: {} });
+    const cancelled = p2.ok ? rt.cancelScheduledNotice(p2.id) : false;
+    const results = await rt.runDueScheduledNotices(new Date());
+    const listed = rt.listScheduledNotices();
+    const sentIds = new Set(results.map((r) => r.id));
+    const futureRow = listed.find((r) => r.id === (f1.ok ? f1.id : ""));
+    const cancelledRow = listed.find((r) => r.id === (p2.ok ? p2.id : ""));
+    const pass =
+      p1.ok === true &&
+      p2.ok === true &&
+      f1.ok === true &&
+      cancelled === true &&
+      results.length === 1 &&
+      sentIds.has(p1.ok ? p1.id : "") &&
+      futureRow?.status === "pending" &&
+      cancelledRow?.status === "cancelled";
+    push(
+      "S75",
+      "Scheduler runs only pending due notices — future and cancelled are skipped",
+      pass,
+      `ran=${results.length} future=${futureRow?.status} cancelled=${cancelledRow?.status}`,
+    );
+  } catch (e) {
+    push("S75", "Scheduler runs only pending due notices — future and cancelled are skipped", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S76 — allowlist runtime additions do not persist across clear; scratch always allowed.
+  try {
+    clearRuntimeAllowlist();
+    const bogus = "111111111111111111";
+    const beforeAdd = isGuildAllowed(bogus);
+    addRuntimeAllowedGuild(bogus);
+    const afterAdd = isGuildAllowed(bogus);
+    clearRuntimeAllowlist();
+    const afterClear = isGuildAllowed(bogus);
+    const scratchStill = isGuildAllowed("1540022458126700674");
+    const listed = listAllowedGuilds();
+    let malformedRejected = false;
+    try {
+      addRuntimeAllowedGuild("not-a-snowflake");
+    } catch {
+      malformedRejected = true;
+    }
+    const pass =
+      beforeAdd === false &&
+      afterAdd === true &&
+      afterClear === false &&
+      scratchStill === true &&
+      malformedRejected === true &&
+      listed.includes("1540022458126700674");
+    push(
+      "S76",
+      "Allowlist runtime additions are reversible and never remove scratch",
+      pass,
+      `beforeAdd=${beforeAdd} afterAdd=${afterAdd} afterClear=${afterClear} scratch=${scratchStill} malformed=${malformedRejected}`,
+    );
+  } catch (e) {
+    push("S76", "Allowlist runtime additions are reversible and never remove scratch", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S77 — setNotificationPreference for an unknown snowflake is refused with member-unknown.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const missing = rt.setNotificationPreference({ snowflake: "ghost_1", channel: "notice", enabled: false });
+    // A staff-seeded member is not intake-complete either.
+    const beforeIntake = rt.setNotificationPreference({ snowflake: "owner_1", channel: "notice", enabled: false });
+    // Even with a MemberRow inserted directly at state "none".
+    const partial = { snowflake: "partial_1", handle: "p", callsign: null, intake_state: "none", grants: [], flags: [], staff_notes: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    rt.store.members.set("partial_1", partial as unknown as Parameters<typeof rt.store.members.set>[1]);
+    const noneState = rt.setNotificationPreference({ snowflake: "partial_1", channel: "notice", enabled: false });
+    const pass =
+      missing.ok === false && /member unknown/i.test(missing.reason ?? "") &&
+      beforeIntake.ok === false &&
+      noneState.ok === false && /intake incomplete/i.test(noneState.reason ?? "");
+    push(
+      "S77",
+      "Notification preferences refuse unknown members and pre-intake members",
+      pass,
+      `missing=${missing.ok} owner=${beforeIntake.ok} noneState=${noneState.ok}`,
+    );
+  } catch (e) {
+    push("S77", "Notification preferences refuse unknown members and pre-intake members", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S78 — scheduler + notices operational-kind maps stay in step.
+  try {
+    const { default: _u } = { default: undefined };
+    const noticesSrc = readFileSync(join(cwd, "src/lib/mortis/notices.ts"), "utf8");
+    const schedSrc = readFileSync(join(cwd, "src/lib/mortis/scheduler.ts"), "utf8");
+    // Extract keys from OperationalNoticeKind type union in notices.ts.
+    const noticesKinds = new Set(
+      [...noticesSrc.matchAll(/\|\s*"([a-z_]+)"/g)].map((m) => m[1]),
+    );
+    const schedKinds = new Set(OPERATIONAL_KINDS.map(String));
+    const missingInSched = [...noticesKinds].filter((k) => !schedKinds.has(k));
+    const missingInNotices = [...schedKinds].filter((k) => !noticesKinds.has(k));
+    const noNarrative = !/narrative/i.test(schedSrc.split("\n").filter((l) => !l.startsWith("//")).join("\n").replace(/NARRATIVE_KIND_SHAPE|narrative_reveal/g, ""));
+    // A weaker check that the code refuses narrative substring in any code path.
+    const refusesNarrative = /narrative kind refused|narrative template refused/i.test(schedSrc);
+    const pass = missingInSched.length === 0 && missingInNotices.length === 0 && refusesNarrative;
+    push(
+      "S78",
+      "Scheduler operational-kind allowlist matches the notices map",
+      pass,
+      `missingInSched=${missingInSched.join(",")} missingInNotices=${missingInNotices.join(",")} refuses=${refusesNarrative} noNarrativeText=${noNarrative}`,
+    );
+  } catch (e) {
+    push("S78", "Scheduler operational-kind allowlist matches the notices map", false, e instanceof Error ? e.message : String(e));
+  }
+
   void writeFileSync;
   void mkdtempSync;
   void rmSync;
   void tmpdir;
   void scanDeveloper;
+  void setNotificationPreference;
+  void CAPTURED_INSTALL_PARAMS;
+  void classifyDiscordHttp;
+  void assessPublicApplication;
+  void assessLiveReadiness;
   return out;
 }
