@@ -2170,11 +2170,17 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
       return out;
     };
     const patterns: Array<{ label: string; rx: RegExp }> = [
-      // Bot token shape: three base64 segments, first is 20+ chars (application id or user id encoded).
-      { label: "bot-token", rx: /Bot [A-Za-z0-9._-]{50,}/ },
+      // Authorization header form.
+      { label: "bot-auth-header", rx: /Bot [A-Za-z0-9._-]{50,}/ },
+      // BARE Discord bot token shape: <base64 id>.<6 char stamp>.<27+ char hmac>.
+      // A leaked credential usually appears bare — in a config value, a JSON
+      // blob, or pasted into a doc — not always after the word "Bot". The
+      // earlier scanner only caught the "Bot " form and would have missed all
+      // of those.
+      { label: "bare-bot-token", rx: /\b[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}\b/ },
       // Webhook URL with a token appended.
       { label: "webhook-token-pair", rx: /discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-Za-z0-9._-]{60,}/ },
-      // Private key (only shape).
+      // Private key (shape only).
       { label: "priv-key", rx: /-----BEGIN\s+(?:RSA\s+)?PRIVATE KEY-----/ },
     ];
     for (const dir of paths) {
@@ -2190,7 +2196,27 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
         }
       }
     }
-    push("S87", "No bot tokens, webhook URL+token pairs, or private keys in git-tracked source", bad.length === 0, `hits=${bad.length}${bad.length ? ` :: ${bad.slice(0, 5).join(",")}` : ""}`);
+    // POSITIVE CONTROL: a scanner reporting "0 hits" is only meaningful if it
+    // can actually detect a planted credential. Prove each pattern fires on a
+    // synthetic sample before trusting the clean result.
+    const controls: Array<[string, string]> = [
+      ["bot-auth-header", `Bot ${"A".repeat(30)}.${"B".repeat(6)}.${"C".repeat(30)}`],
+      ["bare-bot-token", `${"A".repeat(24)}.${"B".repeat(6)}.${"C".repeat(30)}`],
+      ["webhook-token-pair", `https://discord.com/api/webhooks/123456789012345678/${"D".repeat(68)}`],
+      // Assembled at runtime so the literal header never appears contiguously
+      // in this file — otherwise the scanner correctly flags its own source.
+      ["priv-key", `${"-".repeat(5)}BEGIN PRIVATE ${"KEY"}${"-".repeat(5)}`],
+    ];
+    const inert = controls.filter(([label, sample]) => {
+      const p = patterns.find((x) => x.label === label);
+      return !p || !p.rx.test(sample);
+    });
+    push(
+      "S87",
+      "Secret scanner detects planted credentials and finds none in git-tracked source",
+      bad.length === 0 && inert.length === 0,
+      `hits=${bad.length}${bad.length ? ` :: ${bad.slice(0, 5).join(",")}` : ""} inertPatterns=${inert.length ? inert.map(([l]) => l).join(",") : "none"}`,
+    );
   } catch (e) {
     push("S87", "No bot tokens, webhook URL+token pairs, or private keys in git-tracked source", false, e instanceof Error ? e.message : String(e));
   }
@@ -2260,7 +2286,10 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
 
   // S91 — SECURITY: redactToken scrubs the credential out of arbitrary text.
   try {
-    const fake = "MTIzNDU2Nzg5MDEyMzQ1Njc4.Gabcde.THIS-IS-A-FAKE-TEST-TOKEN-VALUE";
+    // Assembled from parts so this fixture never appears in the source as a
+    // contiguous credential shape — otherwise it would trip the S87 scanner
+    // that this very suite runs over src/.
+    const fake = ["MTIzNDU2Nzg5MDEyMzQ1Njc4", "Gabcde", "THIS-IS-A-FAKE-TEST-TOKEN-VALUE"].join(".");
     const body = `discord 401 {"message":"401: Unauthorized","token":"${fake}"} retry with Bot ${fake}`;
     const scrubbed = redactToken(body, fake);
     const clean = !scrubbed.includes(fake) && scrubbed.includes("[REDACTED]");
@@ -2409,6 +2438,46 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     );
   } catch (e) {
     push("S95", "429 retry_after is parsed from the body and long buckets fail fast", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S96 — REGRESSION (audit): the zero-canon inspector no longer has the three
+  // evasions found by audit. Each case plants a real canon identifier in a
+  // temp tree in a form the OLD inspector silently skipped, and asserts it is
+  // now caught — while genuine guard comments still produce no false positive.
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "mortis-zerocanon-"));
+    const { mkdirSync } = await import("node:fs");
+
+    // 1. Canon id on a line containing a guard word inside a STRING literal.
+    //    Old isGuardLine matched the word anywhere and skipped the whole line.
+    writeFileSync(join(dir, "sneaky.ts"), 'const label = "FACT-ALPHA-1 do not remove";\n');
+    // 2. Canon id in prose. Old CODE_EXT excluded .md entirely.
+    writeFileSync(join(dir, "notes.md"), "Reference: CON-BRAVO-2 appears in the corpus.\n");
+    // 3. Canon id in a nested file reusing an allowed BASENAME.
+    mkdirSync(join(dir, "nested"), { recursive: true });
+    writeFileSync(join(dir, "nested", "terms.ts"), "export const x = /TRG-CHARLIE-3/;\n");
+    // 4. A genuine guard comment must NOT be flagged.
+    writeFileSync(join(dir, "guard.ts"), "// never store FACT- identifiers in the envoy\nexport const ok = 1;\n");
+    // 5. A root-level allowed file stays exempt.
+    writeFileSync(join(dir, "terms.ts"), "export const list = [/FACT-[A-Z0-9-]+/];\n");
+
+    const res = inspectZeroCanon(dir);
+    const files = new Set(res.hits.map((h) => h.file.replace(`${dir}/`, "")));
+    const caughtSneaky = files.has("sneaky.ts");
+    const caughtProse = files.has("notes.md");
+    const caughtNested = files.has("nested/terms.ts");
+    const noFalsePositiveGuard = !files.has("guard.ts");
+    const rootExempt = !files.has("terms.ts");
+    rmSync(dir, { recursive: true, force: true });
+
+    push(
+      "S96",
+      "Zero-canon inspector catches string-literal, prose, and nested-basename evasions",
+      caughtSneaky && caughtProse && caughtNested && noFalsePositiveGuard && rootExempt,
+      `sneaky=${caughtSneaky} prose=${caughtProse} nestedBasename=${caughtNested} guardNotFlagged=${noFalsePositiveGuard} rootExempt=${rootExempt} hits=${res.hits.length}`,
+    );
+  } catch (e) {
+    push("S96", "Zero-canon inspector catches string-literal, prose, and nested-basename evasions", false, e instanceof Error ? e.message : String(e));
   }
 
   // S78 — scheduler + notices operational-kind maps stay in step.

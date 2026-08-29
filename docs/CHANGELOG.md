@@ -2,6 +2,54 @@
 
 Engineering log for https://github.com/MMGSaint/mortis-field-network. Simulator-proven unless marked live.
 
+## 2026-08-29 — LIVE VERIFIED: 22/22 acceptance on scratch; 3 live defects fixed
+
+First pass with a working bot credential in the environment. Discord REST **and**
+the gateway WebSocket are reachable through the agent proxy, so this is genuine
+live verification, not simulation. Full detail in
+[CLAUDE_AUTONOMOUS_COMPLETION_REPORT.md](CLAUDE_AUTONOMOUS_COMPLETION_REPORT.md).
+
+Live-proven on guild `1540022458126700674`: bot `Mortis Field Network — Dev#7959`,
+managed-role permissions exactly `295011699728`, **Administrator false**,
+`missingBits []`, gateway READY with heartbeat ACK, 6 slash commands registered
+(`post, orient, ticket, lockdown, faq, notifications`), Plan 0 creates / 0 updates,
+Apply idempotent, 22/22 acceptance checks PASS, guild left clean with 0 health HOLDs.
+
+- **S89 — live attach decoupled from the Provision UI.** `attachLive()` was reachable
+  only from the web route, making the UI a hidden dependency of the engine. New
+  `live-session.ts` reads `DISCORD_BOT_TOKEN` from the environment; the CLI gains
+  `--live` plus `connect`/`health`/`commands`/`gateway`/`notice`/`verify`. The token is
+  never an argv parameter, never written, never logged, never audited; `redactToken()`
+  scrubs it from Discord error bodies. The S70 allowlist still gates the attach.
+- **S90 — live acceptance harness** (`live-acceptance.ts`), 22 checks, full teardown in a
+  `finally` block, lockdown always lifted, never deletes a channel it did not create.
+  A simulator run is labelled SIMULATED and can never report itself LIVE.
+- **DEFECT 1 fixed (HIGH) — live staff table was empty.** `server.ts` seeded the literal
+  placeholders `owner_1`/`ops_1`, which are not snowflakes, so a real staff member over
+  the gateway was always `unauthorized` — live ticket claim/close was broken for every
+  real human. `seedLiveStaff()` now seeds from the Discord guild `owner_id` (new
+  `LiveIdentity.ownerId`) plus an optional `DISCORD_OPERATOR_IDS` allowlist. Discord role
+  membership is deliberately not a seed source. Regression S94.
+- **DEFECT 2 fixed (MEDIUM) — ticket post guard was bypassable.** `claimTicket`/`closeTicket`
+  took `bp` as optional and, when omitted, called `guild.postMessage` directly, skipping
+  `isBlueprintPlayerChannel`. The guard now fails closed without a blueprint. Regression S93.
+- **DEFECT 3 fixed (MEDIUM) — 429 `retry_after` capped at 8s.** Channel name/topic PATCH is
+  2 per 10 minutes; the old cap could never satisfy that bucket, burned quota, then failed.
+  `retryAfterMs()` parses the JSON body with a header fallback and fails fast beyond
+  `MAX_RETRY_SLEEP_MS`, carrying the real wait. Regression S95.
+- **Secret scanner hardened.** S87 only caught tokens preceded by `Bot `; a bare leaked
+  credential would slip through. Added a bare-token pattern and **positive controls** so a
+  "0 hits" result is only trusted once each pattern is proven to fire.
+- **Zero-canon inspector hardened.** Audit found three evasions: a guard word inside a
+  *string literal* skipped the whole line; prose extensions (`.md`/`.txt`/`.yaml`/`.csv`)
+  were unscanned though canon most often arrives as prose; and `ALLOW_FILES` matched by bare
+  basename anywhere in the tree. All three closed, with regression S96 planting a canon
+  identifier in each evaded form.
+- `saveScratchState` writes a trailing newline so live runs stop dirtying the state file.
+
+Full suite: **T1–T9 + S1–S96 = 105/105 PASS**, plus **A01–A22 = 22/22 LIVE**. typecheck PASS,
+build PASS. Production Discord never contacted. No canon introduced. Administrator never added.
+
 ## 2026-08-29 — S79–S88: /faq, /notifications, operational tick, chaos, security sweep
 
 Continuation of the same pass. Simulator only; no live scratch attach this pass.
