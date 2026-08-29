@@ -65,6 +65,14 @@ Guild left clean afterwards: 46 channels (unchanged), bot roles restored,
 probe messages deleted, harness channel deleted, probe role revoked,
 `health.ok=true` with **0 HOLDs**.
 
+**On A20 and rate limits.** Discord's channel name/topic PATCH bucket is 2
+requests per 10 minutes. The harness was run repeatedly while fixing defects, so
+a later run reported A20 as `BLOCKED :: Discord rate limit — bucket needs 154s`
+rather than PASS. That is the DEFECT 3 fix behaving correctly: a rate limit is
+reported as **BLOCKED with the real `retry_after`**, never silently as PASS and
+never misattributed as a FAIL. A20 passed cleanly on an unthrottled run, so
+drift-detect-and-repair is genuinely LIVE VERIFIED.
+
 ---
 
 ## 3. Defects found by live verification, and fixed
@@ -127,6 +135,29 @@ proves each pattern actually fires on a synthetic sample before trusting a
 "0 hits" result. (A scanner that silently matches nothing reads identically to
 a clean tree.)
 
+### Caller-supplied field could relax the restricted-term scan (MEDIUM, latent)
+
+`dispatch.ts` computed `published_verbatim: Boolean(tpl.canon_ref) && Boolean(req.fields.verbatim)`.
+`req.fields` is caller-supplied, so anyone able to set dispatch fields could
+flip `verbatim` on any template carrying a `canon_ref` and thereby skip:
+
+- every block-mode restricted term whose `allow_in` includes
+  `published_verbatim` — currently `season-3-new-copy` and `stalker-new-copy`,
+  i.e. exactly the "Season 3 as generic player-facing branding" restriction, and
+- the Forge program-sense rule (`terms.ts` short-circuits on the same flag).
+
+Not reachable today: no shipped template pairs a `canon_ref` with a `{placeholder}`,
+and the `/post` slash command exposes only a fixed field allowlist that excludes
+`verbatim`. But it was one template away from being live, and the coupling is
+wrong on principle — a per-request field must never relax a safety scan.
+
+Fix: `published_verbatim` is now a property of the owner-authored **template**
+(`tpl.verbatim === true`), not of the request. No shipped template sets it, so
+behaviour is unchanged for everything currently in the blueprint; the hole simply
+closes. Regression **S97** builds a `canon_ref` template with a substitutable slot,
+proves a caller-set `verbatim` is ignored (still blocked at step 4), and proves the
+owner-authored template opt-in still works.
+
 ### Zero-canon inspector had three evasions (MEDIUM)
 
 Audit of `zero-canon.ts` found:
@@ -187,10 +218,10 @@ npm run test:engine  PASS
 npm run build        PASS  (Vite + Nitro, PGLite migrate no-op)
 ```
 
-**T1–T9 + S1–S96 = 105/105 PASS** (simulator engine suite)
+**T1–T9 + S1–S97 = 106/106 PASS** (simulator engine suite)
 **A01–A22 = 22/22 PASS** (live acceptance, real scratch guild)
 
-New this run: S89, S90, S91, S92, S93, S94, S95, S96.
+New this run: S89, S90, S91, S92, S93, S94, S95, S96, S97.
 
 `npm test` still includes App Builder PWA injector tests that fail on the
 product title. Engine tests were not weakened to accommodate them.
@@ -253,7 +284,7 @@ To continue:
 git clone https://github.com/MMGSaint/mortis-field-network.git
 git checkout claude/mortis-field-network-continuation-orsh36
 npm install
-npm run test:engine          # expect 105 PASS
+npm run test:engine          # expect 106 PASS
 # put DISCORD_BOT_TOKEN in a gitignored .env (never in git, never in chat)
 npm run provision -- verify --live   # expect 22/22
 ```

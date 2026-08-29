@@ -150,7 +150,14 @@ export async function dispatchSend(
   }
 
   const scanCtx: ScanContext = {
-    published_verbatim: Boolean(tpl.canon_ref) && Boolean(req.fields.verbatim),
+    // S97: this MUST come from the owner-authored template, never from the
+    // request. It was `Boolean(req.fields.verbatim)`, so any caller able to
+    // set dispatch fields could flip it on any template carrying a canon_ref
+    // and thereby skip every block-mode restricted term whose `allow_in`
+    // includes published_verbatim (season-3-new-copy, stalker-new-copy) as
+    // well as the Forge program-sense rule. A per-request field must never
+    // relax a safety scan.
+    published_verbatim: Boolean(tpl.canon_ref) && tpl.verbatim === true,
     approved_program_template: Boolean(tpl.approved) || tpl.register === "PLAYER_SAFE",
     operational_notice: tpl.class === "OPERATIONAL" || tpl.register === "OPERATIONAL",
   };

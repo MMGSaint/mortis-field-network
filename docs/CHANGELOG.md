@@ -47,7 +47,7 @@ Apply idempotent, 22/22 acceptance checks PASS, guild left clean with 0 health H
   identifier in each evaded form.
 - `saveScratchState` writes a trailing newline so live runs stop dirtying the state file.
 
-Full suite: **T1–T9 + S1–S96 = 105/105 PASS**, plus **A01–A22 = 22/22 LIVE**. typecheck PASS,
+Full suite: **T1–T9 + S1–S97 = 106/106 PASS**, plus **A01–A22 = 22/22 LIVE**. typecheck PASS,
 build PASS. Production Discord never contacted. No canon introduced. Administrator never added.
 
 ## 2026-08-29 — S79–S88: /faq, /notifications, operational tick, chaos, security sweep

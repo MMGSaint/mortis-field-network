@@ -2480,6 +2480,68 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S96", "Zero-canon inspector catches string-literal, prose, and nested-basename evasions", false, e instanceof Error ? e.message : String(e));
   }
 
+  // S97 — SECURITY REGRESSION (audit): a caller-supplied field must never relax
+  // the restricted-term scan. `published_verbatim` was computed from
+  // `req.fields.verbatim`, so anyone able to set dispatch fields could flip it
+  // on any template carrying a canon_ref and skip the block-mode restricted
+  // terms whose allow_in includes published_verbatim, plus the Forge rule.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const src = readFileSync(join(cwd, "src/lib/mortis/dispatch.ts"), "utf8");
+    const noCallerControl = !/published_verbatim:\s*Boolean\(tpl\.canon_ref\)\s*&&\s*Boolean\(req\.fields\.verbatim\)/.test(src);
+    const templateDriven = /published_verbatim:\s*Boolean\(tpl\.canon_ref\)\s*&&\s*tpl\.verbatim === true/.test(src);
+
+    // Behavioural half: craft a canon_ref template with a substitutable slot,
+    // then try to smuggle a block-mode restricted term through it by setting
+    // fields.verbatim. It must still be blocked at step 4.
+    const probeKey = "tpl.s97.probe";
+    rt.bp.templates.push({
+      key: probeKey,
+      register: "OPERATIONAL",
+      audience: "initiate+",
+      channel_key: "network.status",
+      class: "OPERATIONAL",
+      canon_ref: "MCA-OPS-PL-012",
+      title: "PROBE",
+      body: "{payload}",
+    } as (typeof rt.bp.templates)[number]);
+
+    const restrictedPayload = "Season 3 begins now";
+    const withVerbatim = await rt.dispatch({
+      channel_key: "network.status",
+      template_key: probeKey,
+      fields: { payload: restrictedPayload, verbatim: "1" },
+    });
+    const withoutVerbatim = await rt.dispatch({
+      channel_key: "network.status",
+      template_key: probeKey,
+      fields: { payload: restrictedPayload },
+    });
+    // An owner-authored opt-in on the template still works as designed.
+    const optedIn = rt.bp.templates.find((t) => t.key === probeKey)!;
+    optedIn.verbatim = true;
+    const templateOptIn = await rt.dispatch({
+      channel_key: "network.status",
+      template_key: probeKey,
+      fields: { payload: restrictedPayload },
+    });
+
+    push(
+      "S97",
+      "Caller-supplied fields.verbatim cannot relax the restricted-term scan",
+      noCallerControl &&
+        templateDriven &&
+        withVerbatim.ok === false &&
+        withVerbatim.step === 4 &&
+        withoutVerbatim.ok === false &&
+        templateOptIn.ok === true,
+      `callerControlGone=${noCallerControl} templateDriven=${templateDriven} withVerbatim=${withVerbatim.ok}/step${withVerbatim.step} without=${withoutVerbatim.ok} ownerOptIn=${templateOptIn.ok}`,
+    );
+  } catch (e) {
+    push("S97", "Caller-supplied fields.verbatim cannot relax the restricted-term scan", false, e instanceof Error ? e.message : String(e));
+  }
+
   // S78 — scheduler + notices operational-kind maps stay in step.
   try {
     const { default: _u } = { default: undefined };
