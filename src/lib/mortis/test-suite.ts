@@ -22,6 +22,13 @@ import {
   classifyDiscordHttp,
   probePublicApplication,
 } from "./discord-public.ts";
+import { isGuildAllowed, addRuntimeAllowedGuild, clearRuntimeAllowlist, listAllowedGuilds } from "./allowlist.ts";
+import { startTestableGateway } from "./discord-gateway.ts";
+import type { EnvoyContext } from "./envoy.ts";
+import { setNotificationPreference, getNotificationPreferences, memberOptedIn, DEFAULT_PREFERENCES } from "./notifications.ts";
+import { scheduleOperationalNotice, runDueScheduledNotices, cancelScheduledNotice, listScheduledNotices, OPERATIONAL_KINDS } from "./scheduler.ts";
+import { runOperationalTick, resetHoldFingerprintsForTest } from "./operations.ts";
+import { redactToken, seedLiveStaff, MissingLiveTokenError, attachLiveFromEnv } from "./live-session.ts";
 
 export type TestResult = { id: string; name: string; pass: boolean; detail: string };
 
@@ -1600,10 +1607,976 @@ export async function runSupplementaryTests(cwd = process.cwd()): Promise<TestRe
     push("S69", "Apply does not duplicate when an unpinned template post is not authored as the bot user", false, e instanceof Error ? e.message : String(e));
   }
 
+  // S70 — live-attach guild allowlist refuses production guild ids BEFORE hydrate.
+  try {
+    clearRuntimeAllowlist();
+    const scratchAllowed = isGuildAllowed("1540022458126700674");
+    const foreignRefused = !isGuildAllowed("999999999999999999");
+    const malformedRefused = !isGuildAllowed("not-a-snowflake");
+    const rt = await fresh(cwd);
+    let refusedBeforeHydrate = false;
+    let auditRefused = false;
+    try {
+      await rt.attachLive({
+        token: "fake.token.value.never.sent",
+        guildId: "999999999999999999",
+        appId: "1540058003888410806",
+        confirmScratch: true,
+      });
+    } catch (e) {
+      refusedBeforeHydrate = /live-attach refused|allowlist/i.test((e as Error).message);
+      auditRefused = rt.store.audit.some(
+        (a) => a.action === "discord.connect.refused" && a.target === "999999999999999999",
+      );
+    }
+    const pass = scratchAllowed && foreignRefused && malformedRefused && refusedBeforeHydrate && auditRefused;
+    push(
+      "S70",
+      "Live-attach refuses non-allowlisted guild before any token/hydrate call",
+      pass,
+      `scratch=${scratchAllowed} foreign=${foreignRefused} malformed=${malformedRefused} refused=${refusedBeforeHydrate} audit=${auditRefused}`,
+    );
+  } catch (e) {
+    push("S70", "Live-attach refuses non-allowlisted guild before any token/hydrate call", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S71 — gateway zombie detection: missing heartbeat ACK triggers reconnect.
+  try {
+    const packets: unknown[] = [];
+    let opened = false;
+    let closedCount = 0;
+    let listeners: Record<string, Array<(ev: unknown) => void>> = { open: [], message: [], close: [], error: [] };
+    class FakeWs {
+      readyState = 1;
+      addEventListener(k: string, fn: (ev: unknown) => void) {
+        (listeners[k] ??= []).push(fn);
+      }
+      send(payload: string) {
+        packets.push(JSON.parse(payload));
+      }
+      close(code?: number) {
+        closedCount += 1;
+        this.readyState = 3;
+        for (const fn of listeners.close ?? []) fn({ code: code ?? 1000, reason: "test" });
+      }
+    }
+    let fake: FakeWs | null = null;
+    let scheduledDelays: number[] = [];
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const gw = startTestableGateway({
+      token: "test",
+      ctx: () => ({} as unknown as EnvoyContext),
+      handle: async () => new Response("{}"),
+      wsFactory: () => {
+        fake = new FakeWs();
+        return fake as unknown as WebSocket;
+      },
+      setTimer: (fn, ms) => {
+        scheduledDelays.push(ms);
+        const t = { fn, ms };
+        timers.push(t);
+        return t as unknown as ReturnType<typeof setTimeout>;
+      },
+      clearTimer: () => {
+        /* tests never fire the scheduled timer */
+      },
+    });
+    // Let setImmediate fire the connect.
+    await new Promise((r) => setImmediate(r));
+    // Fake HELLO
+    for (const fn of listeners.message ?? []) fn({ data: JSON.stringify({ op: 10, d: { heartbeat_interval: 40 } }) });
+    // Wait for one heartbeat tick without sending an ACK
+    await new Promise((r) => setTimeout(r, 90));
+    const st = gw.status();
+    gw.stop();
+    const pass = (st.zombieResets ?? 0) >= 1 && closedCount >= 1;
+    push(
+      "S71",
+      "Gateway zombie detection reconnects when heartbeat ACK is missing",
+      pass,
+      `zombieResets=${st.zombieResets ?? 0} closed=${closedCount} delays=${scheduledDelays.join(",")}`,
+    );
+  } catch (e) {
+    push("S71", "Gateway zombie detection reconnects when heartbeat ACK is missing", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S72 — OP7 / OP9 / concurrent close scheduling: single reconnect timer.
+  try {
+    let listeners: Record<string, Array<(ev: unknown) => void>> = { open: [], message: [], close: [], error: [] };
+    let closedCount = 0;
+    class FakeWs {
+      readyState = 1;
+      addEventListener(k: string, fn: (ev: unknown) => void) {
+        (listeners[k] ??= []).push(fn);
+      }
+      send() {
+        /* */
+      }
+      close() {
+        closedCount += 1;
+        this.readyState = 3;
+      }
+    }
+    const scheduled: number[] = [];
+    const gw = startTestableGateway({
+      token: "test",
+      ctx: () => ({} as unknown as EnvoyContext),
+      handle: async () => new Response("{}"),
+      wsFactory: () => new FakeWs() as unknown as WebSocket,
+      setTimer: (_fn, ms) => {
+        scheduled.push(ms);
+        return {} as unknown as ReturnType<typeof setTimeout>;
+      },
+      clearTimer: () => undefined,
+    });
+    await new Promise((r) => setImmediate(r));
+    // OP7 reconnect, then close, then op9 all before any timer fires.
+    for (const fn of listeners.message ?? []) fn({ data: JSON.stringify({ op: 7, d: null }) });
+    for (const fn of listeners.close ?? []) fn({ code: 1006, reason: "" });
+    for (const fn of listeners.message ?? []) fn({ data: JSON.stringify({ op: 9, d: false }) });
+    const st = gw.status();
+    gw.stop();
+    const pass = scheduled.length === 1 && (st.duplicateReconnectSuppressed ?? 0) >= 2;
+    push(
+      "S72",
+      "Gateway OP7/OP9/close overlap does not stack duplicate reconnect timers",
+      pass,
+      `scheduled=${scheduled.length} suppressed=${st.duplicateReconnectSuppressed ?? 0}`,
+    );
+  } catch (e) {
+    push("S72", "Gateway OP7/OP9/close overlap does not stack duplicate reconnect timers", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S73 — notification preferences are reversible, gated on intake, audited.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const beforeIntake = rt.setNotificationPreference({ snowflake: "np_1", channel: "dispatches", enabled: false });
+    // Complete intake, then set + reverse.
+    await rt.intake({ snowflake: "np_1", handle: "np", callsign: "Neo" });
+    const on = rt.setNotificationPreference({ snowflake: "np_1", channel: "dispatches", enabled: true });
+    const off = rt.setNotificationPreference({ snowflake: "np_1", channel: "dispatches", enabled: false });
+    const restored = rt.setNotificationPreference({ snowflake: "np_1", channel: "dispatches", enabled: true });
+    const unknownCh = rt.setNotificationPreference({ snowflake: "np_1", channel: "everything", enabled: false });
+    const prefs = rt.getNotificationPreferences("np_1");
+    const audits = rt.store.audit.filter(
+      (a) => a.action === "notifications.preference.set" && a.target === "np_1",
+    );
+    const optedIn = memberOptedIn(rt.store, "np_1", "dispatches");
+    const defaultsForNewMember = getNotificationPreferences(rt.store, "unknown_snowflake");
+    const pass =
+      beforeIntake.ok === false &&
+      on.ok === true &&
+      off.ok === true &&
+      restored.ok === true &&
+      unknownCh.ok === false &&
+      prefs.dispatches === true &&
+      optedIn === true &&
+      audits.length === 3 &&
+      defaultsForNewMember.notice === DEFAULT_PREFERENCES.notice;
+    push(
+      "S73",
+      "Notification preferences are reversible, intake-gated, and audited",
+      pass,
+      `beforeIntake=${beforeIntake.ok} on=${on.ok} off=${off.ok} restored=${restored.ok} unknown=${unknownCh.ok} audits=${audits.length}`,
+    );
+  } catch (e) {
+    push("S73", "Notification preferences are reversible, intake-gated, and audited", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S74 — operational-only scheduler: valid, narrative-kind refused, smuggle refused, run-due delivers.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const okOp = rt.scheduleNotice({
+      at: past,
+      kind: "maintenance",
+      fields: { window: "01:00–02:00 UTC" },
+    });
+    const badKind = rt.scheduleNotice({
+      at: past,
+      kind: "narrative_reveal",
+      fields: {},
+    });
+    const badKind2 = rt.scheduleNotice({
+      at: past,
+      kind: "MAINTENANCE",
+      fields: {},
+    });
+    const badFields = rt.scheduleNotice({
+      at: past,
+      kind: "maintenance",
+      fields: { rich: { components: [{ type: 2 }] } as unknown as string },
+    });
+    const badAt = rt.scheduleNotice({
+      at: "not-an-iso",
+      kind: "maintenance",
+      fields: {},
+    });
+    // Smuggle attempt: hand-craft a NARRATIVE template into the blueprint and try
+    // to schedule "maintenance" — the scheduler must inspect the template class,
+    // not just the kind label.
+    const originalTpl = rt.bp.templates.find((t) => t.key === "tpl.ops.maintenance");
+    const cloneBp = structuredClone(rt.bp);
+    const swap = cloneBp.templates.find((t) => t.key === "tpl.ops.maintenance");
+    if (swap) swap.class = "NARRATIVE";
+    const smuggle = scheduleOperationalNotice(
+      { bp: cloneBp, store: rt.store },
+      { at: past, kind: "maintenance", fields: {} },
+    );
+    // Run due — should deliver only the one legitimate row.
+    const results = await rt.runDueScheduledNotices(new Date());
+    const listed = rt.listScheduledNotices();
+    const cancelledId = rt.scheduleNotice({ at: past, kind: "outage", fields: {} });
+    const cancelled = cancelledId.ok ? rt.cancelScheduledNotice(cancelledId.id) : false;
+    const pass =
+      okOp.ok === true &&
+      badKind.ok === false && /narrative/i.test(badKind.reason ?? "") &&
+      badKind2.ok === false && /kind rejected/i.test(badKind2.reason ?? "") &&
+      badFields.ok === false && /must be a string/.test(badFields.reason ?? "") &&
+      badAt.ok === false && /ISO/i.test(badAt.reason ?? "") &&
+      smuggle.ok === false && /narrative template/i.test(smuggle.reason ?? "") &&
+      results.length === 1 &&
+      results[0]!.result.ok === true &&
+      listed.some((r) => r.status === "sent" && r.kind === "maintenance") &&
+      cancelled === true &&
+      OPERATIONAL_KINDS.length === 8 &&
+      Boolean(originalTpl);
+    push(
+      "S74",
+      "Operational scheduler accepts operational kinds only and refuses narrative smuggling",
+      pass,
+      `okOp=${okOp.ok} narr=${badKind.ok} case=${badKind2.ok} fields=${badFields.ok} at=${badAt.ok} smuggle=${smuggle.ok} ran=${results.length} cancelled=${cancelled}`,
+    );
+  } catch (e) {
+    push("S74", "Operational scheduler accepts operational kinds only and refuses narrative smuggling", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S75 — scheduler.runDueScheduledNotices does not fire cancelled or future notices.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const past = new Date(Date.now() - 10_000).toISOString();
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const p1 = rt.scheduleNotice({ at: past, kind: "outage", fields: {} });
+    const p2 = rt.scheduleNotice({ at: past, kind: "outage", fields: {} });
+    const f1 = rt.scheduleNotice({ at: future, kind: "maintenance", fields: {} });
+    const cancelled = p2.ok ? rt.cancelScheduledNotice(p2.id) : false;
+    const results = await rt.runDueScheduledNotices(new Date());
+    const listed = rt.listScheduledNotices();
+    const sentIds = new Set(results.map((r) => r.id));
+    const futureRow = listed.find((r) => r.id === (f1.ok ? f1.id : ""));
+    const cancelledRow = listed.find((r) => r.id === (p2.ok ? p2.id : ""));
+    const pass =
+      p1.ok === true &&
+      p2.ok === true &&
+      f1.ok === true &&
+      cancelled === true &&
+      results.length === 1 &&
+      sentIds.has(p1.ok ? p1.id : "") &&
+      futureRow?.status === "pending" &&
+      cancelledRow?.status === "cancelled";
+    push(
+      "S75",
+      "Scheduler runs only pending due notices — future and cancelled are skipped",
+      pass,
+      `ran=${results.length} future=${futureRow?.status} cancelled=${cancelledRow?.status}`,
+    );
+  } catch (e) {
+    push("S75", "Scheduler runs only pending due notices — future and cancelled are skipped", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S76 — allowlist runtime additions do not persist across clear; scratch always allowed.
+  try {
+    clearRuntimeAllowlist();
+    const bogus = "111111111111111111";
+    const beforeAdd = isGuildAllowed(bogus);
+    addRuntimeAllowedGuild(bogus);
+    const afterAdd = isGuildAllowed(bogus);
+    clearRuntimeAllowlist();
+    const afterClear = isGuildAllowed(bogus);
+    const scratchStill = isGuildAllowed("1540022458126700674");
+    const listed = listAllowedGuilds();
+    let malformedRejected = false;
+    try {
+      addRuntimeAllowedGuild("not-a-snowflake");
+    } catch {
+      malformedRejected = true;
+    }
+    const pass =
+      beforeAdd === false &&
+      afterAdd === true &&
+      afterClear === false &&
+      scratchStill === true &&
+      malformedRejected === true &&
+      listed.includes("1540022458126700674");
+    push(
+      "S76",
+      "Allowlist runtime additions are reversible and never remove scratch",
+      pass,
+      `beforeAdd=${beforeAdd} afterAdd=${afterAdd} afterClear=${afterClear} scratch=${scratchStill} malformed=${malformedRejected}`,
+    );
+  } catch (e) {
+    push("S76", "Allowlist runtime additions are reversible and never remove scratch", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S77 — setNotificationPreference for an unknown snowflake is refused with member-unknown.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const missing = rt.setNotificationPreference({ snowflake: "ghost_1", channel: "notice", enabled: false });
+    // A staff-seeded member is not intake-complete either.
+    const beforeIntake = rt.setNotificationPreference({ snowflake: "owner_1", channel: "notice", enabled: false });
+    // Even with a MemberRow inserted directly at state "none".
+    const partial = { snowflake: "partial_1", handle: "p", callsign: null, intake_state: "none", grants: [], flags: [], staff_notes: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    rt.store.members.set("partial_1", partial as unknown as Parameters<typeof rt.store.members.set>[1]);
+    const noneState = rt.setNotificationPreference({ snowflake: "partial_1", channel: "notice", enabled: false });
+    const pass =
+      missing.ok === false && /member unknown/i.test(missing.reason ?? "") &&
+      beforeIntake.ok === false &&
+      noneState.ok === false && /intake incomplete/i.test(noneState.reason ?? "");
+    push(
+      "S77",
+      "Notification preferences refuse unknown members and pre-intake members",
+      pass,
+      `missing=${missing.ok} owner=${beforeIntake.ok} noneState=${noneState.ok}`,
+    );
+  } catch (e) {
+    push("S77", "Notification preferences refuse unknown members and pre-intake members", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S79 — walkthrough covers /faq (full + topic) and /notifications end-to-end.
+  try {
+    const rt = MortisRuntime.load(cwd);
+    await rt.bootstrapKeys();
+    rt.seedOwner();
+    const result = await runFirstPlayerWalkthrough(rt);
+    const faqAllStep = result.steps.find((s) => s.id === "faq_all");
+    const faqTopicStep = result.steps.find((s) => s.id === "faq_topic");
+    const notifStep = result.steps.find((s) => s.id === "notifications");
+    const orientStep = result.steps.find((s) => s.id === "orient");
+    const pass =
+      Boolean(faqAllStep?.pass) &&
+      Boolean(faqTopicStep?.pass) &&
+      Boolean(notifStep?.pass) &&
+      Boolean(orientStep?.pass) &&
+      result.pass === true;
+    push(
+      "S79",
+      "First-player walkthrough exercises /faq and /notifications alongside /orient",
+      pass,
+      `faq_all=${faqAllStep?.pass} faq_topic=${faqTopicStep?.pass} notif=${notifStep?.pass} overall=${result.pass}`,
+    );
+  } catch (e) {
+    push("S79", "First-player walkthrough exercises /faq and /notifications alongside /orient", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S80 — FAQ content stays player-safe (no restricted or dev vocabulary).
+  try {
+    const faqSrc = readFileSync(join(cwd, "src/lib/mortis/faq.ts"), "utf8");
+    const forbidden = /Season 3|Ashwright|True Name|sprint|MCA-|MIN-/;
+    const clean = !forbidden.test(faqSrc);
+    push("S80", "FAQ text carries no restricted terms or dev vocabulary", clean, `clean=${clean}`);
+  } catch (e) {
+    push("S80", "FAQ text carries no restricted terms or dev vocabulary", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S81 — operational tick fires due notices and debounces repeat health HOLDs.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    resetHoldFingerprintsForTest(rt);
+    const past = new Date(Date.now() - 30_000).toISOString();
+    rt.scheduleNotice({ at: past, kind: "outage", fields: { status: "test" } });
+    // Force a health HOLD by unbinding a required channel.
+    const arrivalId = rt.store.blueprintState.get("arrival.notice");
+    if (arrivalId) rt.store.blueprintState.delete("arrival.notice");
+    const tick1 = await rt.runOperationalTick(new Date());
+    const tick2 = await rt.runOperationalTick(new Date());
+    const holdAudits1 = rt.store.audit.filter((a) => a.action === "operations.health.hold").length;
+    const tickAudits = rt.store.audit.filter((a) => a.action === "operations.tick").length;
+    const pass =
+      tick1.scheduled.length === 1 &&
+      tick2.scheduled.length === 0 &&
+      tick1.health.newHolds.length >= 1 &&
+      tick2.health.newHolds.length === 0 &&
+      holdAudits1 === tick1.health.newHolds.length &&
+      tickAudits === 2;
+    push(
+      "S81",
+      "Operations tick fires due notices, alerts new HOLDs, and debounces repeats",
+      pass,
+      `t1.sched=${tick1.scheduled.length} t2.sched=${tick2.scheduled.length} t1.newHolds=${tick1.health.newHolds.length} t2.newHolds=${tick2.health.newHolds.length} tickRows=${tickAudits}`,
+    );
+    if (arrivalId) rt.store.blueprintState.set("arrival.notice", arrivalId);
+  } catch (e) {
+    push("S81", "Operations tick fires due notices, alerts new HOLDs, and debounces repeats", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S82 — operational tick cannot fire a scheduled row for a NARRATIVE-classed template.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    resetHoldFingerprintsForTest(rt);
+    // Craft a scheduled row directly bypassing scheduleOperationalNotice's
+    // narrative refusal, then swap the template class to NARRATIVE. The tick
+    // must still refuse it at dispatch time — visibility check step 2.
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const id = rt.store.nextId("sched");
+    rt.store.scheduledNotices.push({
+      id,
+      at: past,
+      kind: "maintenance",
+      fields: {},
+      created_by: "test",
+      created_at: new Date().toISOString(),
+      status: "pending",
+      audit_id: "test",
+    });
+    const swap = rt.bp.templates.find((t) => t.key === "tpl.ops.maintenance");
+    const original = swap?.class;
+    if (swap) swap.class = "NARRATIVE";
+    const tick = await rt.runOperationalTick(new Date());
+    if (swap && original !== undefined) swap.class = original;
+    else if (swap) delete (swap as { class?: unknown }).class;
+    const row = rt.listScheduledNotices().find((r) => r.id === id);
+    const pass = tick.scheduled.length === 1 && tick.scheduled[0]!.result.ok === false && row?.status === "failed";
+    push(
+      "S82",
+      "Operations tick refuses NARRATIVE-classed template even for pre-enqueued rows",
+      pass,
+      `ran=${tick.scheduled.length} ok=${tick.scheduled[0]?.result.ok} rowStatus=${row?.status}`,
+    );
+  } catch (e) {
+    push("S82", "Operations tick refuses NARRATIVE-classed template even for pre-enqueued rows", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S83 — operations.ts writes to player-facing channels only via dispatch.send.
+  try {
+    const src = readFileSync(join(cwd, "src/lib/mortis/operations.ts"), "utf8");
+    const bad = /guild\.postMessage|discordDeliver\(/.test(src);
+    const usesDispatchChain = /runDueScheduledNotices|postOperationalNotice|dispatch/.test(src);
+    push(
+      "S83",
+      "Operations module never calls guild.postMessage or discordDeliver directly",
+      !bad && usesDispatchChain,
+      `bad=${bad} chain=${usesDispatchChain}`,
+    );
+  } catch (e) {
+    push("S83", "Operations module never calls guild.postMessage or discordDeliver directly", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S84 — gateway fatal close codes (4004/4010/4011/4012/4013/4014) stop the loop
+  // and do NOT schedule a reconnect. This prevents infinite failed reconnects
+  // on unrecoverable identify / intent / API errors.
+  try {
+    let listeners: Record<string, Array<(ev: unknown) => void>> = { open: [], message: [], close: [], error: [] };
+    class FakeWs {
+      readyState = 1;
+      addEventListener(k: string, fn: (ev: unknown) => void) {
+        (listeners[k] ??= []).push(fn);
+      }
+      send() {
+        /* */
+      }
+      close() {
+        this.readyState = 3;
+      }
+    }
+    const scheduled: number[] = [];
+    const gw = startTestableGateway({
+      token: "test",
+      ctx: () => ({} as unknown as EnvoyContext),
+      handle: async () => new Response("{}"),
+      wsFactory: () => new FakeWs() as unknown as WebSocket,
+      setTimer: (_fn, ms) => {
+        scheduled.push(ms);
+        return {} as unknown as ReturnType<typeof setTimeout>;
+      },
+      clearTimer: () => undefined,
+    });
+    await new Promise((r) => setImmediate(r));
+    // Simulate Discord fatal: authentication failed
+    for (const fn of listeners.close ?? []) fn({ code: 4004, reason: "authentication failed" });
+    // And a follow-up fatal — sharding required
+    for (const fn of listeners.close ?? []) fn({ code: 4011, reason: "sharding required" });
+    gw.stop();
+    const pass = scheduled.length === 0;
+    push("S84", "Gateway fatal close codes stop the loop and do not schedule a reconnect", pass, `scheduled=${scheduled.length}`);
+  } catch (e) {
+    push("S84", "Gateway fatal close codes stop the loop and do not schedule a reconnect", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S85 — repeated scheduler.enqueue of the same content stores separate rows.
+  // The scheduler does not silently dedupe — the operator sees N rows and can
+  // cancel unwanted duplicates.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const at = new Date(Date.now() - 5_000).toISOString();
+    const a = rt.scheduleNotice({ at, kind: "outage", fields: {} });
+    const b = rt.scheduleNotice({ at, kind: "outage", fields: {} });
+    const c = rt.scheduleNotice({ at, kind: "outage", fields: {} });
+    const listed = rt.listScheduledNotices();
+    const pass = a.ok && b.ok && c.ok && listed.filter((r) => r.status === "pending").length === 3 && new Set([a.ok && a.id, b.ok && b.id, c.ok && c.id]).size === 3;
+    push("S85", "Scheduler enqueue does not silently dedupe repeated requests", pass, `pending=${listed.filter((r) => r.status === "pending").length}`);
+  } catch (e) {
+    push("S85", "Scheduler enqueue does not silently dedupe repeated requests", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S86 — /notifications interaction is refused when arrival is under lockdown
+  // and the caller is not yet an initiate. Symmetric to the intake block.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    // Even without lockdown, an un-intake member cannot set preferences.
+    const bare = rt.setNotificationPreference({ snowflake: "u1", channel: "notice", enabled: false });
+    // With lockdown, initiate members can still set preferences (nothing gates prefs behind lockdown).
+    await rt.intake({ snowflake: "u2", handle: "u2", callsign: "Kite" });
+    rt.store.lockdown = true;
+    const okLocked = rt.setNotificationPreference({ snowflake: "u2", channel: "notice", enabled: false });
+    rt.store.lockdown = false;
+    const pass = bare.ok === false && okLocked.ok === true;
+    push("S86", "Notification prefs are member-scoped and independent of lockdown", pass, `bare=${bare.ok} okLocked=${okLocked.ok}`);
+  } catch (e) {
+    push("S86", "Notification prefs are member-scoped and independent of lockdown", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S87 — SECURITY: no bot tokens or webhook URL+token pairs anywhere in the git-tracked source tree.
+  try {
+    const paths = [
+      "src/lib/mortis",
+      "src/routes",
+      "src/lib/auth",
+      "blueprint",
+      "docs",
+      "workers",
+    ];
+    const bad: string[] = [];
+    const walk = async (p: string): Promise<string[]> => {
+      const { readdirSync, statSync } = await import("node:fs");
+      const out: string[] = [];
+      try {
+        for (const entry of readdirSync(join(cwd, p))) {
+          const full = join(p, entry);
+          const st = statSync(join(cwd, full));
+          if (st.isDirectory()) out.push(...(await walk(full)));
+          else out.push(full);
+        }
+      } catch {
+        /* missing path is fine — nothing to scan */
+      }
+      return out;
+    };
+    const patterns: Array<{ label: string; rx: RegExp }> = [
+      // Authorization header form.
+      { label: "bot-auth-header", rx: /Bot [A-Za-z0-9._-]{50,}/ },
+      // BARE Discord bot token shape: <base64 id>.<6 char stamp>.<27+ char hmac>.
+      // A leaked credential usually appears bare — in a config value, a JSON
+      // blob, or pasted into a doc — not always after the word "Bot". The
+      // earlier scanner only caught the "Bot " form and would have missed all
+      // of those.
+      { label: "bare-bot-token", rx: /\b[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}\b/ },
+      // Webhook URL with a token appended.
+      { label: "webhook-token-pair", rx: /discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-Za-z0-9._-]{60,}/ },
+      // Private key (shape only).
+      { label: "priv-key", rx: /-----BEGIN\s+(?:RSA\s+)?PRIVATE KEY-----/ },
+    ];
+    for (const dir of paths) {
+      for (const file of await walk(dir)) {
+        if (/\.(png|jpe?g|gif|ico|woff2?|ttf|otf|bin|pdf)$/i.test(file)) continue;
+        try {
+          const content = readFileSync(join(cwd, file), "utf8");
+          for (const p of patterns) {
+            if (p.rx.test(content)) bad.push(`${file}:${p.label}`);
+          }
+        } catch {
+          /* unreadable file — skip */
+        }
+      }
+    }
+    // POSITIVE CONTROL: a scanner reporting "0 hits" is only meaningful if it
+    // can actually detect a planted credential. Prove each pattern fires on a
+    // synthetic sample before trusting the clean result.
+    const controls: Array<[string, string]> = [
+      ["bot-auth-header", `Bot ${"A".repeat(30)}.${"B".repeat(6)}.${"C".repeat(30)}`],
+      ["bare-bot-token", `${"A".repeat(24)}.${"B".repeat(6)}.${"C".repeat(30)}`],
+      ["webhook-token-pair", `https://discord.com/api/webhooks/123456789012345678/${"D".repeat(68)}`],
+      // Assembled at runtime so the literal header never appears contiguously
+      // in this file — otherwise the scanner correctly flags its own source.
+      ["priv-key", `${"-".repeat(5)}BEGIN PRIVATE ${"KEY"}${"-".repeat(5)}`],
+    ];
+    const inert = controls.filter(([label, sample]) => {
+      const p = patterns.find((x) => x.label === label);
+      return !p || !p.rx.test(sample);
+    });
+    push(
+      "S87",
+      "Secret scanner detects planted credentials and finds none in git-tracked source",
+      bad.length === 0 && inert.length === 0,
+      `hits=${bad.length}${bad.length ? ` :: ${bad.slice(0, 5).join(",")}` : ""} inertPatterns=${inert.length ? inert.map(([l]) => l).join(",") : "none"}`,
+    );
+  } catch (e) {
+    push("S87", "No bot tokens, webhook URL+token pairs, or private keys in git-tracked source", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S88 — SECURITY: new modules stay zero-canon (no restricted terms).
+  try {
+    const newFiles = [
+      "src/lib/mortis/allowlist.ts",
+      "src/lib/mortis/notifications.ts",
+      "src/lib/mortis/scheduler.ts",
+      "src/lib/mortis/operations.ts",
+      "src/lib/mortis/faq.ts",
+    ];
+    const restricted = /Season 3|Ashwright|True Name|Wraith|Warden's Vault|MCA-|MIN-|CANON-/i;
+    const hits: string[] = [];
+    for (const f of newFiles) {
+      try {
+        const src = readFileSync(join(cwd, f), "utf8");
+        if (restricted.test(src)) hits.push(f);
+      } catch {
+        hits.push(`${f}:MISSING`);
+      }
+    }
+    push("S88", "New modules carry no restricted terms or dev vocabulary", hits.length === 0, `hits=${hits.join(",")}`);
+  } catch (e) {
+    push("S88", "New modules carry no restricted terms or dev vocabulary", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S89 — live attach is reachable programmatically, not only from the Provision UI.
+  try {
+    const cliSrc = readFileSync(join(cwd, "tools/mortis-provision/cli.mjs"), "utf8");
+    const sessionSrc = readFileSync(join(cwd, "src/lib/mortis/live-session.ts"), "utf8");
+    const cliHasLive = /--live/.test(cliSrc) && /attachLiveFromEnv/.test(cliSrc);
+    const readsEnv = /process\.env\.DISCORD_BOT_TOKEN/.test(sessionSrc);
+    // The CLI must never take the token as an argv parameter — that would put
+    // it in shell history and in the process table.
+    const noArgvToken = !/argv.*DISCORD_BOT_TOKEN|--token/.test(cliSrc);
+    const exportsAttach = typeof attachLiveFromEnv === "function";
+    push(
+      "S89",
+      "Live attach is invokable from the CLI without the Provision UI",
+      cliHasLive && readsEnv && noArgvToken && exportsAttach,
+      `cliLive=${cliHasLive} readsEnv=${readsEnv} noArgvToken=${noArgvToken} exported=${exportsAttach}`,
+    );
+  } catch (e) {
+    push("S89", "Live attach is invokable from the CLI without the Provision UI", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S90 — the acceptance harness labels simulator runs SIMULATED, never LIVE.
+  try {
+    const rt = await fresh(cwd);
+    const { runLiveAcceptance } = await import("./live-acceptance.ts");
+    // Ask for live even though the runtime is a simulator — it must refuse to
+    // claim LIVE. A simulator pass must never be mistakable for live proof.
+    const report = await runLiveAcceptance(rt, { live: true });
+    const allSimulated = report.results.every((r) => r.mode === "SIMULATED");
+    const noLeftoverLockdown = rt.store.lockdown === false;
+    push(
+      "S90",
+      "Acceptance harness never labels a simulator run LIVE and always lifts lockdown",
+      report.mode === "SIMULATED" && allSimulated && noLeftoverLockdown,
+      `mode=${report.mode} allSimulated=${allSimulated} lockdownCleared=${noLeftoverLockdown} pass=${report.summary.pass}/${report.summary.total}`,
+    );
+  } catch (e) {
+    push("S90", "Acceptance harness never labels a simulator run LIVE and always lifts lockdown", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S91 — SECURITY: redactToken scrubs the credential out of arbitrary text.
+  try {
+    // Assembled from parts so this fixture never appears in the source as a
+    // contiguous credential shape — otherwise it would trip the S87 scanner
+    // that this very suite runs over src/.
+    const fake = ["MTIzNDU2Nzg5MDEyMzQ1Njc4", "Gabcde", "THIS-IS-A-FAKE-TEST-TOKEN-VALUE"].join(".");
+    const body = `discord 401 {"message":"401: Unauthorized","token":"${fake}"} retry with Bot ${fake}`;
+    const scrubbed = redactToken(body, fake);
+    const clean = !scrubbed.includes(fake) && scrubbed.includes("[REDACTED]");
+    let threw = false;
+    const saved = process.env.DISCORD_BOT_TOKEN;
+    delete process.env.DISCORD_BOT_TOKEN;
+    try {
+      await attachLiveFromEnv({ cwd: mkdtempSync(join(tmpdir(), "mortis-notoken-")) });
+    } catch (err) {
+      threw = err instanceof MissingLiveTokenError || /DISCORD_BOT_TOKEN is not set/.test((err as Error).message);
+    }
+    if (saved !== undefined) process.env.DISCORD_BOT_TOKEN = saved;
+    push(
+      "S91",
+      "Token redaction scrubs credentials and a missing token fails closed",
+      clean && threw,
+      `scrubbed=${clean} missingTokenThrows=${threw}`,
+    );
+  } catch (e) {
+    push("S91", "Token redaction scrubs credentials and a missing token fails closed", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S92 — SECURITY: the live-session module never writes the token anywhere.
+  try {
+    const src = readFileSync(join(cwd, "src/lib/mortis/live-session.ts"), "utf8");
+    const writesFile = /writeFileSync|appendFileSync|createWriteStream/.test(src);
+    const logsToken = /console\.(log|error|warn)\([^)]*token/i.test(src);
+    // The token must never be placed in an audit row either.
+    const auditsToken = /appendAudit\([^)]*token/is.test(src);
+    push(
+      "S92",
+      "live-session never writes, logs, or audits the bot token",
+      !writesFile && !logsToken && !auditsToken,
+      `writesFile=${writesFile} logsToken=${logsToken} auditsToken=${auditsToken}`,
+    );
+  } catch (e) {
+    push("S92", "live-session never writes, logs, or audits the bot token", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S93 — REGRESSION (live defect): the ticket post path fails CLOSED when no
+  // blueprint is supplied. Previously claimTicket/closeTicket had an else-branch
+  // that called guild.postMessage directly, skipping isBlueprintPlayerChannel
+  // entirely whenever the optional `bp` argument was omitted.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const ticketsSrc = readFileSync(join(cwd, "src/lib/mortis/tickets.ts"), "utf8");
+    // No raw postMessage may remain outside the guarded helper.
+    const rawPosts = (ticketsSrc.match(/guild\.postMessage\(/g) ?? []).length;
+    const guardedHelperPosts = 2; // the two inside postTicketChannel
+    const noUnguarded = rawPosts === guardedHelperPosts;
+
+    // Behavioural half: point a ticket row at a blueprint player-facing channel
+    // and claim WITHOUT a blueprint. It must refuse rather than post.
+    const t = await createTicket({ opener: "s93_opener", handle: "s93", category: "general", body: "probe" }, rt);
+    const playerChannelId = rt.store.blueprintState.get("network.status")!;
+    const row = rt.store.tickets.get(t.id)!;
+    row.channel_snowflake = playerChannelId;
+    const before = rt.guild.channelById(playerChannelId)!.messages.length;
+    let refused = false;
+    try {
+      await claimTicket(rt.store, t.id, "owner_1", rt.guild /* bp intentionally omitted */);
+    } catch (err) {
+      refused = /ticket path refused/.test((err as Error).message);
+    }
+    const after = rt.guild.channelById(playerChannelId)!.messages.length;
+    push(
+      "S93",
+      "Ticket post path fails closed to player-facing channels even without a blueprint",
+      noUnguarded && refused && after === before,
+      `rawPosts=${rawPosts} refused=${refused} msgs ${before}->${after}`,
+    );
+  } catch (e) {
+    push("S93", "Ticket post path fails closed to player-facing channels even without a blueprint", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S94 — REGRESSION (live defect): live attach seeds the staff table with REAL
+  // snowflakes. Previously only the placeholders owner_1/ops_1 were seeded, so a
+  // real Discord staff member arriving over the gateway was always unauthorized
+  // and live ticket claim/close was impossible.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    rt.store.staff.clear();
+    const ownerSnowflake = "426833958391644162";
+    const savedOps = process.env.DISCORD_OPERATOR_IDS;
+    process.env.DISCORD_OPERATOR_IDS = "111111111111111111, not-a-snowflake ,222222222222222222";
+    const { seeded } = seedLiveStaff(rt, { ownerId: ownerSnowflake });
+    if (savedOps === undefined) delete process.env.DISCORD_OPERATOR_IDS;
+    else process.env.DISCORD_OPERATOR_IDS = savedOps;
+
+    const ownerSeeded = rt.store.staff.get(ownerSnowflake);
+    const opSeeded = rt.store.staff.get("111111111111111111");
+    const junkRejected = ![...rt.store.staff.keys()].some((k) => !/^\d{17,20}$/.test(k));
+    // The seeded owner must actually be able to claim a ticket.
+    const t = await createTicket({ opener: "s94_opener", handle: "s94", category: "general", body: "probe" }, rt);
+    let claimed = false;
+    try {
+      await claimTicket(rt.store, t.id, ownerSnowflake, rt.guild, rt.bp);
+      claimed = rt.store.tickets.get(t.id)?.status === "claimed";
+    } catch {
+      claimed = false;
+    }
+    // A non-seeded snowflake must still be refused.
+    const t2 = await createTicket({ opener: "s94_opener_b", handle: "s94b", category: "general", body: "probe" }, rt);
+    let strangerRefused = false;
+    try {
+      await claimTicket(rt.store, t2.id, "999999999999999999", rt.guild, rt.bp);
+    } catch (err) {
+      strangerRefused = /unauthorized/.test((err as Error).message);
+    }
+    const audited = rt.store.audit.some((a) => a.action === "staff.seed");
+    push(
+      "S94",
+      "Live attach seeds real staff snowflakes; junk rejected, strangers still refused",
+      Boolean(ownerSeeded?.capabilities.includes("*")) && Boolean(opSeeded) && junkRejected && claimed && strangerRefused && audited && seeded.length === 3,
+      `owner=${Boolean(ownerSeeded)} op=${Boolean(opSeeded)} junkRejected=${junkRejected} claimed=${claimed} strangerRefused=${strangerRefused} audited=${audited} seeded=${seeded.length}`,
+    );
+  } catch (e) {
+    push("S94", "Live attach seeds real staff snowflakes; junk rejected, strangers still refused", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S95 — REGRESSION (live defect): 429 retry_after is honoured from the JSON
+  // body, and a bucket longer than MAX_RETRY_SLEEP_MS fails fast instead of
+  // burning 8 blind retries. Discord's channel name/topic PATCH bucket is
+  // 2 requests per 10 minutes, so retry_after is routinely 300-600s; the old
+  // code capped the sleep at 8s and could never satisfy it.
+  try {
+    const { retryAfterMs, MAX_RETRY_SLEEP_MS } = await import("./discord-rest.ts");
+    const bodyWins = retryAfterMs("1", JSON.stringify({ retry_after: 421.4, global: false })) === 421400;
+    const headerFallback = retryAfterMs("7", "not json") === 7000;
+    const stringBody = retryAfterMs(null, JSON.stringify({ retry_after: "12.5" })) === 12500;
+    const neither = retryAfterMs(null, "not json") === 0;
+    const negative = retryAfterMs("-5", "not json") === 0;
+    const longBucketExceedsCap = retryAfterMs(null, JSON.stringify({ retry_after: 600 })) > MAX_RETRY_SLEEP_MS;
+    const shortBucketUnderCap = retryAfterMs(null, JSON.stringify({ retry_after: 1.5 })) < MAX_RETRY_SLEEP_MS;
+    // The source must actually fail fast rather than sleep-and-continue.
+    const src = readFileSync(join(cwd, "src/lib/mortis/discord-rest.ts"), "utf8");
+    const failsFast = /if \(waitMs > MAX_RETRY_SLEEP_MS\) throw lastErr;/.test(src);
+    const noOldCap = !/Math\.min\(Math\.max\(retry, 0\.25\) \* 1000, 8000\)/.test(src);
+    push(
+      "S95",
+      "429 retry_after is parsed from the body and long buckets fail fast",
+      bodyWins && headerFallback && stringBody && neither && negative && longBucketExceedsCap && shortBucketUnderCap && failsFast && noOldCap,
+      `bodyWins=${bodyWins} header=${headerFallback} strBody=${stringBody} neither=${neither} neg=${negative} longFailsFast=${failsFast} oldCapGone=${noOldCap}`,
+    );
+  } catch (e) {
+    push("S95", "429 retry_after is parsed from the body and long buckets fail fast", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S96 — REGRESSION (audit): the zero-canon inspector no longer has the three
+  // evasions found by audit. Each case plants a real canon identifier in a
+  // temp tree in a form the OLD inspector silently skipped, and asserts it is
+  // now caught — while genuine guard comments still produce no false positive.
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "mortis-zerocanon-"));
+    const { mkdirSync } = await import("node:fs");
+
+    // 1. Canon id on a line containing a guard word inside a STRING literal.
+    //    Old isGuardLine matched the word anywhere and skipped the whole line.
+    writeFileSync(join(dir, "sneaky.ts"), 'const label = "FACT-ALPHA-1 do not remove";\n');
+    // 2. Canon id in prose. Old CODE_EXT excluded .md entirely.
+    writeFileSync(join(dir, "notes.md"), "Reference: CON-BRAVO-2 appears in the corpus.\n");
+    // 3. Canon id in a nested file reusing an allowed BASENAME.
+    mkdirSync(join(dir, "nested"), { recursive: true });
+    writeFileSync(join(dir, "nested", "terms.ts"), "export const x = /TRG-CHARLIE-3/;\n");
+    // 4. A genuine guard comment must NOT be flagged.
+    writeFileSync(join(dir, "guard.ts"), "// never store FACT- identifiers in the envoy\nexport const ok = 1;\n");
+    // 5. A root-level allowed file stays exempt.
+    writeFileSync(join(dir, "terms.ts"), "export const list = [/FACT-[A-Z0-9-]+/];\n");
+
+    const res = inspectZeroCanon(dir);
+    const files = new Set(res.hits.map((h) => h.file.replace(`${dir}/`, "")));
+    const caughtSneaky = files.has("sneaky.ts");
+    const caughtProse = files.has("notes.md");
+    const caughtNested = files.has("nested/terms.ts");
+    const noFalsePositiveGuard = !files.has("guard.ts");
+    const rootExempt = !files.has("terms.ts");
+    rmSync(dir, { recursive: true, force: true });
+
+    push(
+      "S96",
+      "Zero-canon inspector catches string-literal, prose, and nested-basename evasions",
+      caughtSneaky && caughtProse && caughtNested && noFalsePositiveGuard && rootExempt,
+      `sneaky=${caughtSneaky} prose=${caughtProse} nestedBasename=${caughtNested} guardNotFlagged=${noFalsePositiveGuard} rootExempt=${rootExempt} hits=${res.hits.length}`,
+    );
+  } catch (e) {
+    push("S96", "Zero-canon inspector catches string-literal, prose, and nested-basename evasions", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S97 — SECURITY REGRESSION (audit): a caller-supplied field must never relax
+  // the restricted-term scan. `published_verbatim` was computed from
+  // `req.fields.verbatim`, so anyone able to set dispatch fields could flip it
+  // on any template carrying a canon_ref and skip the block-mode restricted
+  // terms whose allow_in includes published_verbatim, plus the Forge rule.
+  try {
+    const rt = await fresh(cwd);
+    await rt.apply();
+    const src = readFileSync(join(cwd, "src/lib/mortis/dispatch.ts"), "utf8");
+    const noCallerControl = !/published_verbatim:\s*Boolean\(tpl\.canon_ref\)\s*&&\s*Boolean\(req\.fields\.verbatim\)/.test(src);
+    const templateDriven = /published_verbatim:\s*Boolean\(tpl\.canon_ref\)\s*&&\s*tpl\.verbatim === true/.test(src);
+
+    // Behavioural half: craft a canon_ref template with a substitutable slot,
+    // then try to smuggle a block-mode restricted term through it by setting
+    // fields.verbatim. It must still be blocked at step 4.
+    const probeKey = "tpl.s97.probe";
+    rt.bp.templates.push({
+      key: probeKey,
+      register: "OPERATIONAL",
+      audience: "initiate+",
+      channel_key: "network.status",
+      class: "OPERATIONAL",
+      canon_ref: "MCA-OPS-PL-012",
+      title: "PROBE",
+      body: "{payload}",
+    } as (typeof rt.bp.templates)[number]);
+
+    const restrictedPayload = "Season 3 begins now";
+    const withVerbatim = await rt.dispatch({
+      channel_key: "network.status",
+      template_key: probeKey,
+      fields: { payload: restrictedPayload, verbatim: "1" },
+    });
+    const withoutVerbatim = await rt.dispatch({
+      channel_key: "network.status",
+      template_key: probeKey,
+      fields: { payload: restrictedPayload },
+    });
+    // An owner-authored opt-in on the template still works as designed.
+    const optedIn = rt.bp.templates.find((t) => t.key === probeKey)!;
+    optedIn.verbatim = true;
+    const templateOptIn = await rt.dispatch({
+      channel_key: "network.status",
+      template_key: probeKey,
+      fields: { payload: restrictedPayload },
+    });
+
+    push(
+      "S97",
+      "Caller-supplied fields.verbatim cannot relax the restricted-term scan",
+      noCallerControl &&
+        templateDriven &&
+        withVerbatim.ok === false &&
+        withVerbatim.step === 4 &&
+        withoutVerbatim.ok === false &&
+        templateOptIn.ok === true,
+      `callerControlGone=${noCallerControl} templateDriven=${templateDriven} withVerbatim=${withVerbatim.ok}/step${withVerbatim.step} without=${withoutVerbatim.ok} ownerOptIn=${templateOptIn.ok}`,
+    );
+  } catch (e) {
+    push("S97", "Caller-supplied fields.verbatim cannot relax the restricted-term scan", false, e instanceof Error ? e.message : String(e));
+  }
+
+  // S78 — scheduler + notices operational-kind maps stay in step.
+  try {
+    const { default: _u } = { default: undefined };
+    const noticesSrc = readFileSync(join(cwd, "src/lib/mortis/notices.ts"), "utf8");
+    const schedSrc = readFileSync(join(cwd, "src/lib/mortis/scheduler.ts"), "utf8");
+    // Extract keys from OperationalNoticeKind type union in notices.ts.
+    const noticesKinds = new Set(
+      [...noticesSrc.matchAll(/\|\s*"([a-z_]+)"/g)].map((m) => m[1]),
+    );
+    const schedKinds = new Set(OPERATIONAL_KINDS.map(String));
+    const missingInSched = [...noticesKinds].filter((k) => !schedKinds.has(k));
+    const missingInNotices = [...schedKinds].filter((k) => !noticesKinds.has(k));
+    const noNarrative = !/narrative/i.test(schedSrc.split("\n").filter((l) => !l.startsWith("//")).join("\n").replace(/NARRATIVE_KIND_SHAPE|narrative_reveal/g, ""));
+    // A weaker check that the code refuses narrative substring in any code path.
+    const refusesNarrative = /narrative kind refused|narrative template refused/i.test(schedSrc);
+    const pass = missingInSched.length === 0 && missingInNotices.length === 0 && refusesNarrative;
+    push(
+      "S78",
+      "Scheduler operational-kind allowlist matches the notices map",
+      pass,
+      `missingInSched=${missingInSched.join(",")} missingInNotices=${missingInNotices.join(",")} refuses=${refusesNarrative} noNarrativeText=${noNarrative}`,
+    );
+  } catch (e) {
+    push("S78", "Scheduler operational-kind allowlist matches the notices map", false, e instanceof Error ? e.message : String(e));
+  }
+
   void writeFileSync;
   void mkdtempSync;
   void rmSync;
   void tmpdir;
   void scanDeveloper;
+  void setNotificationPreference;
+  void CAPTURED_INSTALL_PARAMS;
+  void classifyDiscordHttp;
+  void assessPublicApplication;
+  void assessLiveReadiness;
   return out;
 }

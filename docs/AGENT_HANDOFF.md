@@ -7,13 +7,15 @@ Branch: `main`
 
 Also read [FABLE.md](FABLE.md), [CHANGELOG.md](CHANGELOG.md), [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md).
 
-## Current state (2026-08-29, live scratch verified)
+## Current state (2026-08-29, LIVE VERIFIED end-to-end on scratch — 22/22)
 
 Phase 1 Field Network engine + Phase 2 player-safe UX are implemented. GitHub is the **canonical engineering source**.
 
-- Transport default: simulator. Live REST + gateway exist; attach only after operator Connect (token in Provision password field → WeakMap).
-- Scratch guild `1540022458126700674` **live-applied**. Bindings in `data/scratch-guild-state.json` (snowflakes only). lastAppliedHash `4823dcdb…`.
-- Engine tests: T1–T9 + S1–S69 PASS (simulator).
+- Transport default: simulator. Live REST + gateway are proven working. Attach programmatically with `DISCORD_BOT_TOKEN` in a gitignored `.env` (`--live` on the CLI), or via operator Connect in the Provision UI. Either way the token lives only in a WeakMap.
+- Scratch guild `1540022458126700674` **live-applied through 2026-08-28**. Bindings in `data/scratch-guild-state.json` (snowflakes only). lastAppliedHash `4823dcdb…`.
+- Engine tests: T1–T9 + S1–S97 PASS (simulator, 106 total).
+- **Live acceptance: A01–A22 = 22/22 PASS on the real scratch guild (2026-08-29).** Bot `Mortis Field Network — Dev#7959`, managed-role permissions exactly `295011699728`, Administrator **false**, `missingBits []`, gateway READY with heartbeat ACK, 6 slash commands live, Plan 0/0, Apply idempotent, guild left clean with 0 health HOLDs. See [CLAUDE_AUTONOMOUS_COMPLETION_REPORT.md](CLAUDE_AUTONOMOUS_COMPLETION_REPORT.md).
+- **Live work no longer needs the Provision UI.** `npm run provision -- verify --live` (also `connect`/`plan`/`apply`/`health`/`commands`/`gateway`/`notice`) attaches using `DISCORD_BOT_TOKEN` from a gitignored `.env`. The token is never an argv parameter, never written, never logged, never audited.
 - Live this process: Connect, Validate, Plan (0 creates / 0 updates), Apply no-op, Accept/Intake/Initiate, HOW TO BEGIN / REFERENCE / WORLD ACCESS, tickets (general/report/appeal/accessibility), dispatch+retract, notices, lockdown+lift, overwrite sweep 0 failures, gateway READY, slash commands registered, duplicate templates cleaned, pin refresh `already_unpinned` (403/50013).
 - Production Discord: **untouched**.
 - Phase 3 Operations Room: **not opened**.
@@ -34,9 +36,9 @@ Phase 1 Field Network engine + Phase 2 player-safe UX are implemented. GitHub is
 |---|---|
 | Provision, dispatch, tickets, intake, health, lockdown, retract, webhooks | Implemented. Simulator-proven. **Live-verified 2026-08-28 on scratch.** |
 | Pins | Messages posted. Sticky pin 403/50013 without PIN_MESSAGES. Deduped. Health `pin.unpinnable` on empty hydrate (S68). Duplicate scratch copies cleaned 2026-08-29. |
-| Gateway ACK / type-9 modal routing / op-9 reconnect | Implemented. Simulator-proven (S33, S51). **Live READY 2026-08-28.** |
+| Gateway ACK / type-9 modal routing / op-9 reconnect | Implemented. **Live READY + heartbeat ACK 2026-08-29.** Zombie/OP7/OP9/fatal-code paths remain simulator-proven (S71/S72/S84) — they need fault injection. |
 | Player FAQ / HOW TO BEGIN / WORLD ACCESS / /orient / /ticket | Shipped, neutral copy. Live sibling order repaired. |
-| Live scratch Apply / Accept / Intake / Open ticket | **Verified 2026-08-28.** |
+| Live scratch Apply / Accept / Intake / tickets / dispatch / retract / lockdown / drift | **LIVE VERIFIED 2026-08-29, 22/22 (A01–A22).** |
 | Envoy Worker HTTP Interactions | Stub only. Leave Interactions URL blank. |
 
 ## Commands
@@ -73,11 +75,12 @@ Token: **not in this repo**. Rotate if it was ever pasted in chat.
 
 ## What the next autonomous agent should do
 
-1. Clone GitHub. Run `npm run test:engine`.
+1. Clone GitHub. Run `npm run test:engine` (expect T1–T9 + S1–S97 = 106 PASS). With a token in a gitignored `.env`, also run `npm run provision -- verify --live` (expect 22/22).
 2. Do not rebuild. Do not invent canon. Do not open Phase 3. Do not Apply production.
-3. If live Discord is disconnected, continue only work that does not need the token. Connect is Provision password field → WeakMap.
+3. If no token is available, continue everything that does not need one; live-only work is then BLOCKED, never relabelled. With a token, `--live` on the CLI is the supported path — the Provision UI is no longer required.
 4. Remaining owner-only Discord config: PIN_MESSAGES if sticky pins are required; Public Bot off; Developer Portal install_params; Community Safety Setup. Do not add Administrator. Do not reinvite unless Connect proves missing required bits.
 5. If you find a defect, reproduce in the simulator first, add a test, then fix.
+6. S70–S97 are landed. A01–A22 were LIVE VERIFIED on scratch (see CLAUDE_AUTONOMOUS_COMPLETION_REPORT.md). Still simulator-only, because they need fault injection Discord will not produce on demand: gateway zombie/OP7/OP9 timer-stacking (S71/S72) and fatal-close-code handling (S84).
 
 ## Owner-only (cannot be done by an agent)
 

@@ -64,6 +64,16 @@ export type TemplateBlueprint = {
   canon_ref?: string;
   approved?: string;
   neutral_fallback?: boolean;
+  /**
+   * Owner-authored opt-in marking this template a faithful re-presentation of
+   * an already-published document, which relaxes the restricted-term scan for
+   * entries whose `allow_in` includes `published_verbatim`.
+   *
+   * This is a property of the TEMPLATE, never of a request. It was previously
+   * derived from a caller-supplied `fields.verbatim`, which let anyone able to
+   * set dispatch fields disable block-mode restricted terms. See S97.
+   */
+  verbatim?: boolean;
 };
 
 export type Blueprint = {

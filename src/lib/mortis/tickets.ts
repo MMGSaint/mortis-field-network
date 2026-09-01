@@ -36,11 +36,18 @@ function errDetail(err: unknown): { message: string; status?: number; body?: str
   return { message, status: e.status, body: e.body };
 }
 
-function isBlueprintPlayerChannel(bp: Blueprint, store: EnvoyStore, channelId: string): boolean {
+function isBlueprintPlayerChannel(bp: Blueprint | undefined, store: EnvoyStore, channelId: string): boolean {
   const key = store.reverseState.get(channelId);
   if (!key) return false;
+  // Without a blueprint we cannot read the audience, so fail CLOSED: any
+  // channel bound to a blueprint key is off-limits to the ticket path.
+  // Ticket channels are never blueprint-bound, so this never blocks a
+  // legitimate ticket post. S93.
+  if (!bp) return true;
   const ch = channelByKey(bp, key);
-  if (!ch) return false;
+  // A bound key with no matching blueprint channel is still not a ticket
+  // channel — refuse rather than assume it is safe.
+  if (!ch) return true;
   return ch.audience !== "staff" && ch.register !== "staff";
 }
 
@@ -108,7 +115,7 @@ function escapeHtml(s: string): string {
 }
 
 async function postTicketChannel(
-  bp: Blueprint,
+  bp: Blueprint | undefined,
   store: EnvoyStore,
   guild: SimulatedGuild,
   channelId: string,
@@ -368,8 +375,7 @@ export async function claimTicket(
   if (!staffAllowedToSee(store, staffSnowflake, row.category)) throw new Error("unauthorized");
   if (guild && row.channel_snowflake) {
     try {
-      if (bp) await postTicketChannel(bp, store, guild, row.channel_snowflake, "Ticket claimed.");
-      else await guild.postMessage(row.channel_snowflake, "Ticket claimed.");
+      await postTicketChannel(bp, store, guild, row.channel_snowflake, "Ticket claimed.");
     } catch (err) {
       const e = err as Error & { body?: string };
       throw Object.assign(new Error(`claim discord: ${e.message}${e.body ? ` ${e.body}` : ""}`), { body: e.body });
@@ -395,8 +401,7 @@ export async function closeTicket(
   const ch = guild.channelById(row.channel_snowflake);
   if (row.channel_snowflake) {
     try {
-      if (bp) await postTicketChannel(bp, store, guild, row.channel_snowflake, "Ticket closed. Transcript stored.");
-      else await guild.postMessage(row.channel_snowflake, "Ticket closed. Transcript stored.");
+      await postTicketChannel(bp, store, guild, row.channel_snowflake, "Ticket closed. Transcript stored.");
     } catch (err) {
       const e = err as Error & { body?: string };
       throw Object.assign(new Error(`close discord: ${e.message}${e.body ? ` ${e.body}` : ""}`), { body: e.body });

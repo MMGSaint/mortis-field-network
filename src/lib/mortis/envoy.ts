@@ -4,6 +4,8 @@ import { dispatchSend } from "./dispatch.ts";
 import { acceptTerms, completeIntake } from "./intake.ts";
 import { claimTicket, closeTicket, createTicket, parseTicketCategory, reopenTicket } from "./tickets.ts";
 import { closeArrival, openArrival } from "./provision.ts";
+import { faqTopic, faqAll } from "./faq.ts";
+import { setNotificationPreference } from "./notifications.ts";
 import type { SimulatedGuild } from "./discord-sim.ts";
 import type { EnvoyStore } from "./store.ts";
 import type { Blueprint, TicketCategory } from "./types.ts";
@@ -33,6 +35,11 @@ function json(status: number, body: unknown, extra: Record<string, string> = {})
 
 function ephemeral(content: string): Response {
   return json(200, { type: 4, data: { content: content.slice(0, 180), flags: 64 } });
+}
+
+/** Longer ephemeral for /faq. Discord's per-message cap is 2000; we stay well under. */
+function ephemeralLong(content: string): Response {
+  return json(200, { type: 4, data: { content: content.slice(0, 1900), flags: 64 } });
 }
 
 function failReason(e: unknown, fallback: string): string {
@@ -155,6 +162,8 @@ async function handleInteraction(i: DiscordInteraction, ctx: EnvoyContext): Prom
     if (name === "orient") return slashOrient(ctx);
     if (name === "ticket") return slashTicket(i, actor, ctx);
     if (name === "lockdown") return slashLockdown(i, actor, ctx);
+    if (name === "faq") return slashFaq(i, ctx);
+    if (name === "notifications") return slashNotifications(i, actor, ctx);
     return json(200, { type: 4, data: { content: "Unknown command.", flags: 64 } });
   }
   if (i.type === 3) {
@@ -310,6 +319,43 @@ async function slashTicket(
     const msg = e instanceof Error && e.message === "rate_limited" ? "You already have open tickets. Close or wait." : `Ticket create failed: ${failReason(e, "unknown")}`;
     return ephemeral(msg);
   }
+}
+
+async function slashFaq(i: DiscordInteraction, _ctx: EnvoyContext): Promise<Response> {
+  const opts = Object.fromEntries((i.data?.options ?? []).map((o) => [o.name, o.value]));
+  const topic = opts.topic;
+  if (!topic) {
+    return ephemeralLong(faqAll());
+  }
+  const entry = faqTopic(topic);
+  if (!entry) return ephemeral("Unknown FAQ topic. Try /faq with no topic for the full list.");
+  return ephemeralLong(`${entry.title}\n\n${entry.body}`);
+}
+
+async function slashNotifications(
+  i: DiscordInteraction,
+  actor: { id: string; username: string },
+  ctx: EnvoyContext,
+): Promise<Response> {
+  const opts = Object.fromEntries((i.data?.options ?? []).map((o) => [o.name, o.value]));
+  const channel = String(opts.channel ?? "");
+  const enabled = String(opts.enabled ?? "").toLowerCase() === "on";
+  const result = setNotificationPreference(ctx.store, {
+    snowflake: actor.id,
+    channel,
+    enabled,
+    actor: actor.id,
+  });
+  if (!result.ok) {
+    if (/intake incomplete/i.test(result.reason)) {
+      return ephemeral("Preferences unlock after intake. Complete ENTRY first.");
+    }
+    if (/member unknown/i.test(result.reason)) {
+      return ephemeral("Preferences unlock after intake. Complete ENTRY first.");
+    }
+    return ephemeral(`Preference not set: ${result.reason}`);
+  }
+  return ephemeral(`Preference recorded: ${channel} = ${enabled ? "on" : "off"}. Reversible.`);
 }
 
 async function slashLockdown(

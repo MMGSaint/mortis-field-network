@@ -109,6 +109,8 @@
     { "name": "post", "description": "Post an approved notice through the dispatch path.", "staff_only": true },
     { "name": "orient", "description": "How to begin on this network.", "staff_only": false },
     { "name": "ticket", "description": "Open a private support ticket.", "staff_only": false },
-    { "name": "lockdown", "description": "Close arrival and pause invites.", "staff_only": true, "capability": "lockdown" }
+    { "name": "lockdown", "description": "Close arrival and pause invites.", "staff_only": true, "capability": "lockdown" },
+    { "name": "faq", "description": "Frequently asked questions. Player-safe. No lore.", "staff_only": false },
+    { "name": "notifications", "description": "Choose which network categories you hear.", "staff_only": false }
   ]
 }

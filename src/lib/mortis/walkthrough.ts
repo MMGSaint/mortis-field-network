@@ -73,5 +73,69 @@ export async function runFirstPlayerWalkthrough(rt: MortisRuntime): Promise<{
     "slash /orient is player-safe",
   );
 
+  // /faq — full list plus a specific topic
+  const signedFaqCall = async (options?: Array<{ name: string; value: string }>) => {
+    const body = JSON.stringify({
+      type: 2,
+      data: { name: "faq", options },
+      user: { id: guest.id, username: "newcomer" },
+    });
+    const t = String(Math.floor(Date.now() / 1000));
+    const s = await rt.signDiscordBody(body, t);
+    return rt.fetch(
+      new Request("https://envoy.local/interactions", {
+        method: "POST",
+        headers: { "x-signature-ed25519": s.signature, "x-signature-timestamp": t },
+        body,
+      }),
+    );
+  };
+  const faqAllRes = await signedFaqCall();
+  const faqAllJson = (await faqAllRes.json()) as { data?: { content?: string; flags?: number } };
+  const faqAllText = faqAllJson.data?.content ?? "";
+  push(
+    "faq_all",
+    faqAllRes.status === 200 && faqAllText.includes("FAQ") && !/Season 3|Ashwright|sprint|canon/i.test(faqAllText),
+    "slash /faq (full) is player-safe",
+  );
+  const faqOneRes = await signedFaqCall([{ name: "topic", value: "tickets" }]);
+  const faqOneJson = (await faqOneRes.json()) as { data?: { content?: string; flags?: number } };
+  const faqOneText = faqOneJson.data?.content ?? "";
+  push(
+    "faq_topic",
+    faqOneRes.status === 200 && faqOneText.includes("ticket") && (faqOneJson.data?.flags ?? 0) === 64,
+    "slash /faq topic is ephemeral and functional",
+  );
+
+  // /notifications — pre-intake would already be complete for this guest, so this exercises the happy path.
+  const notifBody = JSON.stringify({
+    type: 2,
+    data: {
+      name: "notifications",
+      options: [
+        { name: "channel", value: "notice" },
+        { name: "enabled", value: "off" },
+      ],
+    },
+    user: { id: guest.id, username: "newcomer" },
+  });
+  const nts = String(Math.floor(Date.now() / 1000));
+  const nsig = await rt.signDiscordBody(notifBody, nts);
+  const notifRes = await rt.fetch(
+    new Request("https://envoy.local/interactions", {
+      method: "POST",
+      headers: { "x-signature-ed25519": nsig.signature, "x-signature-timestamp": nts },
+      body: notifBody,
+    }),
+  );
+  const notifJson = (await notifRes.json()) as { data?: { content?: string; flags?: number } };
+  const notifText = notifJson.data?.content ?? "";
+  const prefs = rt.getNotificationPreferences(guest.id);
+  push(
+    "notifications",
+    notifRes.status === 200 && /Preference recorded/i.test(notifText) && prefs.notice === false,
+    "slash /notifications persists the preference",
+  );
+
   return { pass: steps.every((s) => s.pass), steps };
 }

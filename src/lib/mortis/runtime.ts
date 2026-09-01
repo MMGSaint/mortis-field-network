@@ -17,6 +17,15 @@ import { assessHealth, type HealthReport } from "./health.ts";
 import { runFirstPlayerWalkthrough } from "./walkthrough.ts";
 import { registerGuildCommands } from "./commands.ts";
 import { postOperationalNotice, type OperationalNoticeKind } from "./notices.ts";
+import { isGuildAllowed, allowlistReason } from "./allowlist.ts";
+import {
+  setNotificationPreference,
+  getNotificationPreferences,
+  type NotificationChannel,
+  type NotificationPreferences,
+} from "./notifications.ts";
+import { scheduleOperationalNotice, cancelScheduledNotice, listScheduledNotices, runDueScheduledNotices, type ScheduledNotice } from "./scheduler.ts";
+import { runOperationalTick, type OperationalTickReport } from "./operations.ts";
 
 export type RuntimeSnapshot = {
   guildName: string;
@@ -83,6 +92,18 @@ export class MortisRuntime {
     if (!opts.confirmScratch) throw new Error("scratch confirmation required");
     if (!/^\d{17,20}$/.test(opts.guildId)) throw new Error("guild snowflake malformed");
     if (!/^\d{17,20}$/.test(opts.appId)) throw new Error("application id malformed");
+    // S70 — allowlist refusal MUST happen before any token or hydrate call.
+    // A production guild id must never reach the REST layer via this path.
+    if (!isGuildAllowed(opts.guildId)) {
+      this.store.appendAudit({
+        actor: "owner-cli",
+        action: "discord.connect.refused",
+        target: opts.guildId,
+        outcome: "fail",
+        details: { reason: "allowlist", guildId: opts.guildId },
+      });
+      throw new Error(`live-attach refused: ${allowlistReason(opts.guildId)}`);
+    }
     const live = new DiscordRestGuild(opts.token, opts.guildId);
     const identity = await live.hydrate();
     // Scratch may already hold Administrator from earlier work. Do not require it;
@@ -401,6 +422,43 @@ export class MortisRuntime {
 
   async notice(kind: OperationalNoticeKind, fields: Record<string, string>) {
     return postOperationalNotice(this, kind, fields);
+  }
+
+  /** S73 — set a notification preference for a member. */
+  setNotificationPreference(input: { snowflake: string; channel: NotificationChannel | string; enabled: boolean; actor?: string }) {
+    return setNotificationPreference(this.store, {
+      snowflake: input.snowflake,
+      channel: input.channel,
+      enabled: input.enabled,
+      actor: input.actor,
+    });
+  }
+
+  /** S73 — get the effective preferences (defaults merged) for a member. */
+  getNotificationPreferences(snowflake: string): NotificationPreferences {
+    return getNotificationPreferences(this.store, snowflake);
+  }
+
+  /** S74 — enqueue an operational-only scheduled notice. */
+  scheduleNotice(input: { at: string; kind: string; fields?: Record<string, unknown>; actor?: string }) {
+    return scheduleOperationalNotice({ bp: this.bp, store: this.store }, input);
+  }
+
+  cancelScheduledNotice(id: string, actor = "owner-cli"): boolean {
+    return cancelScheduledNotice(this.store, id, actor);
+  }
+
+  listScheduledNotices(): ScheduledNotice[] {
+    return listScheduledNotices(this.store);
+  }
+
+  async runDueScheduledNotices(now: Date = new Date()) {
+    return runDueScheduledNotices(this, now);
+  }
+
+  /** S81 — one operational tick: fire due notices + alert on new health HOLDs. */
+  async runOperationalTick(now: Date = new Date()): Promise<OperationalTickReport> {
+    return runOperationalTick(this, now);
   }
 
   hasLiveToken(): boolean {
